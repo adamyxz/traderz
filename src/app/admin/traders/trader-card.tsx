@@ -13,11 +13,29 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownRight,
+  Coins,
+  BarChart3,
 } from 'lucide-react';
 import type { Trader } from '@/db/schema';
 
+interface TradingPair {
+  id: number;
+  symbol: string;
+}
+
+interface KlineInterval {
+  id: number;
+  code: string;
+  label: string;
+}
+
+interface TraderWithRelations extends Trader {
+  preferredTradingPair?: TradingPair;
+  preferredKlineIntervals?: KlineInterval[];
+}
+
 interface TraderCardProps {
-  trader: Trader;
+  trader: TraderWithRelations;
   onEdit: () => void;
   onDelete: () => void;
 }
@@ -173,6 +191,29 @@ export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps
         </div>
         <span className="text-[9px] text-gray-500">UTC</span>
       </div>
+
+      {/* Preferences - Compact */}
+      {(trader.preferredTradingPair ||
+        (trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0)) && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {trader.preferredTradingPair && (
+            <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
+              <Coins className="h-3 w-3 text-orange-400" />
+              <span className="text-[9px] font-medium text-gray-300">
+                {trader.preferredTradingPair.symbol}
+              </span>
+            </div>
+          )}
+          {trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0 && (
+            <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
+              <BarChart3 className="h-3 w-3 text-blue-400" />
+              <span className="text-[9px] font-medium text-gray-300">
+                {trader.preferredKlineIntervals.map((i) => i.code).join(', ')}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Footer - Status Indicators */}
       <div className="flex items-center justify-between border-t border-gray-700/50 pt-2 mt-2">

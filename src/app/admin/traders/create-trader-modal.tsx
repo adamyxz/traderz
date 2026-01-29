@@ -1,13 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { Trader } from '@/db/schema';
+
+interface TradingPair {
+  id: number;
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+}
+
+interface KlineInterval {
+  id: number;
+  code: string;
+  label: string;
+  seconds: number;
+}
 
 interface CreateTraderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (trader: Partial<Trader>) => void;
+  onCreate: (
+    trader: Partial<Trader> & {
+      preferredTradingPairId?: number | null;
+      preferredKlineIntervalIds?: number[];
+    }
+  ) => void;
 }
 
 const defaultFormData: {
@@ -41,6 +60,10 @@ const defaultFormData: {
   activeTimeEnd: string;
   tradingStrategy: 'trend' | 'oscillation' | 'arbitrage' | 'market_making' | 'scalping' | 'swing';
   holdingPeriod: 'intraday' | 'short_term' | 'medium_term' | 'long_term';
+
+  // 偏好设置
+  preferredTradingPairId: number | null;
+  preferredKlineIntervalIds: number[];
 } = {
   // 基础信息
   name: '',
@@ -72,11 +95,71 @@ const defaultFormData: {
   activeTimeEnd: '23:59',
   tradingStrategy: 'trend',
   holdingPeriod: 'short_term',
+
+  // 偏好设置
+  preferredTradingPairId: null,
+  preferredKlineIntervalIds: [],
 };
 
 export default function CreateTraderModal({ isOpen, onClose, onCreate }: CreateTraderModalProps) {
   const [formData, setFormData] = useState(defaultFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [tradingPairs, setTradingPairs] = useState<TradingPair[]>([]);
+  const [klineIntervals, setKlineIntervals] = useState<KlineInterval[]>([]);
+  const [loadingPairs, setLoadingPairs] = useState(false);
+  const [loadingIntervals, setLoadingIntervals] = useState(false);
+
+  // 交易对搜索状态
+  const [pairSearchQuery, setPairSearchQuery] = useState('');
+  const [isPairDropdownOpen, setIsPairDropdownOpen] = useState(false);
+
+  // 获取交易对和周期数据
+  useEffect(() => {
+    if (isOpen) {
+      const fetchData = async () => {
+        setLoadingPairs(true);
+        setLoadingIntervals(true);
+        try {
+          const [pairsRes, intervalsRes] = await Promise.all([
+            fetch('/api/trading-pairs'),
+            fetch('/api/kline-intervals'),
+          ]);
+
+          if (pairsRes.ok) {
+            const pairsData = await pairsRes.json();
+            setTradingPairs(pairsData);
+          }
+
+          if (intervalsRes.ok) {
+            const intervalsData = await intervalsRes.json();
+            setKlineIntervals(intervalsData);
+          }
+        } catch (error) {
+          console.error('Error fetching data:', error);
+        } finally {
+          setLoadingPairs(false);
+          setLoadingIntervals(false);
+        }
+      };
+
+      fetchData();
+    }
+  }, [isOpen]);
+
+  // 点击外部关闭下拉列表
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.pair-search-dropdown')) {
+        setIsPairDropdownOpen(false);
+      }
+    };
+
+    if (isPairDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isPairDropdownOpen]);
 
   if (!isOpen) return null;
 
@@ -496,6 +579,164 @@ export default function CreateTraderModal({ isOpen, onClose, onCreate }: CreateT
                     className="w-full rounded-md bg-gray-700/50 px-2 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
                 </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 偏好设置 */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
+              <div className="h-0.5 w-4 rounded-full bg-orange-500"></div>
+              Preferences
+            </h3>
+            <div className="space-y-3">
+              {/* 交易对搜索选择 */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-300">
+                  Preferred Trading Pair
+                </label>
+                <div className="relative pair-search-dropdown">
+                  <input
+                    type="text"
+                    value={pairSearchQuery}
+                    onChange={(e) => {
+                      setPairSearchQuery(e.target.value);
+                      setIsPairDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsPairDropdownOpen(true)}
+                    placeholder="Search trading pair..."
+                    disabled={loadingPairs}
+                    className="w-full rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
+                  />
+                  {formData.preferredTradingPairId && !pairSearchQuery && (
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3">
+                      <span className="text-sm text-gray-300">
+                        {tradingPairs.find((p) => p.id === formData.preferredTradingPairId)?.symbol}
+                      </span>
+                    </div>
+                  )}
+                  {/* 清除按钮 */}
+                  {formData.preferredTradingPairId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, preferredTradingPairId: null });
+                        setPairSearchQuery('');
+                      }}
+                      className="absolute inset-y-0 right-8 flex items-center pr-2 text-gray-400 hover:text-white"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                  {/* 下拉图标 */}
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <svg
+                      className="h-4 w-4 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </div>
+
+                  {/* 下拉列表 */}
+                  {isPairDropdownOpen && (
+                    <div className="absolute z-10 mt-1 w-full rounded-md bg-gray-800 border border-gray-700 shadow-lg max-h-60 overflow-auto">
+                      {loadingPairs ? (
+                        <div className="px-3 py-2 text-sm text-gray-400">Loading...</div>
+                      ) : (
+                        <>
+                          {tradingPairs
+                            .filter((pair) =>
+                              pair.symbol.toLowerCase().includes(pairSearchQuery.toLowerCase())
+                            )
+                            .slice(0, 10)
+                            .map((pair) => (
+                              <button
+                                key={pair.id}
+                                type="button"
+                                onClick={() => {
+                                  setFormData({ ...formData, preferredTradingPairId: pair.id });
+                                  setPairSearchQuery('');
+                                  setIsPairDropdownOpen(false);
+                                }}
+                                className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 transition-colors ${
+                                  formData.preferredTradingPairId === pair.id
+                                    ? 'bg-sky-500/20 text-sky-300'
+                                    : 'text-white'
+                                }`}
+                              >
+                                {pair.symbol}
+                              </button>
+                            ))}
+                          {tradingPairs.filter((pair) =>
+                            pair.symbol.toLowerCase().includes(pairSearchQuery.toLowerCase())
+                          ).length === 0 && (
+                            <div className="px-3 py-2 text-sm text-gray-400">No results found</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* K线周期勾选 */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-300">
+                  Preferred Kline Intervals
+                </label>
+                {loadingIntervals ? (
+                  <div className="text-sm text-gray-400 py-2">Loading intervals...</div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {klineIntervals.map((interval) => (
+                      <label
+                        key={interval.id}
+                        className={`flex items-center gap-2 rounded-md px-3 py-2 cursor-pointer transition-all ${
+                          formData.preferredKlineIntervalIds.includes(interval.id)
+                            ? 'bg-sky-500/20 border border-sky-500/50'
+                            : 'bg-gray-700/30 border border-gray-600 hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.preferredKlineIntervalIds.includes(interval.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                preferredKlineIntervalIds: [
+                                  ...formData.preferredKlineIntervalIds,
+                                  interval.id,
+                                ],
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                preferredKlineIntervalIds:
+                                  formData.preferredKlineIntervalIds.filter(
+                                    (id) => id !== interval.id
+                                  ),
+                              });
+                            }
+                          }}
+                          className="h-3.5 w-3.5 rounded border-gray-500 bg-gray-600 text-sky-500 focus:ring-2 focus:ring-sky-500/20"
+                        />
+                        <span className="text-xs text-white">{interval.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1.5 text-[10px] text-gray-500">
+                  {formData.preferredKlineIntervalIds.length} interval(s) selected
+                </p>
               </div>
             </div>
           </section>

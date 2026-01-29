@@ -5,7 +5,7 @@
  */
 
 import { DeepSeekChatClient } from './chat';
-import { createTraderTool } from './tools';
+import { createTraderTool, selectTradingContextTool } from './tools';
 import { eventBus } from './events';
 import type { Trader } from '@/db/schema';
 
@@ -24,28 +24,179 @@ When creating a trader:
 - Avoid duplicating existing trader names, strategies, or parameter combinations
 - Consider different market regimes (bull, bear, sideways)
 - Balance risk/reward ratios appropriately
-- Provide clear, descriptive names and detailed explanations
 - Set realistic and safe trading parameters
+
+**Description Requirements:**
+- Keep descriptions CONCISE and EFFICIENT (1-2 sentences max)
+- Focus on key differentiating factors: strategy, timeframe, risk level, and unique approach
+- Avoid verbose explanations - save context for the actual parameters
+- Example: "Conservative BTC trend follower using 4h/1d intervals with 3x leverage and tight stops."
 
 Use the create_trader tool to generate each trader configuration. All parameters must be carefully considered and validated.`;
 
 /**
- * Format existing traders for the prompt
+ * System prompt for trading pair and interval selection
  */
-function formatExistingTradersTable(traders: Trader[]): string {
+export const TRADING_CONTEXT_SELECTION_PROMPT = `You are an expert cryptocurrency market analyst specializing in selecting optimal trading pairs and timeframes for different trading strategies.
+
+Your task is to analyze existing traders' preferences and recommend a NEW combination of trading pair and kline intervals that:
+1. Differs from existing combinations to ensure diversity
+2. Matches appropriate trading characteristics (volatility, liquidity, market activity)
+3. Supports various strategy types (scalping, swing, trend following, etc.)
+
+Selection Guidelines:
+- High volatility pairs (SOL, DOGE, etc.) + short intervals → Good for scalping/day trading
+- Stable pairs (BTC, ETH) + longer intervals → Better for swing/trend following
+- Consider liquidity: Ensure sufficient trading volume for the strategy
+- Avoid duplicating existing trader combinations
+
+Return your selection using the select_trading_context tool.`;
+
+/**
+ * Format existing traders for the prompt - only descriptions array
+ */
+function formatExistingTradersDescriptions(traders: Trader[]): string {
   if (traders.length === 0) {
     return 'No existing traders found. You are creating the first trader.';
   }
 
-  let table =
-    '| ID | Name | Strategy | Holding Period | Risk Score | Aggressiveness | Max Leverage | Description |\n';
-  table += '|---|---|---|---|---|---|---|---|\n';
+  const descriptions = traders.map((t) => t.description || 'N/A');
+  return JSON.stringify(descriptions, null, 2);
+}
 
-  traders.forEach((t) => {
-    table += `| ${t.id} | ${t.name} | ${t.tradingStrategy} | ${t.holdingPeriod} | ${t.riskPreferenceScore}/10 | ${t.aggressivenessLevel}/10 | ${t.maxLeverage}x | ${t.description || 'N/A'} |\n`;
+/**
+ * Format existing traders' trading preferences for context selection
+ */
+function formatExistingTradingPreferences(traders: Trader[]): string {
+  if (traders.length === 0) {
+    return 'No existing traders. You can select any trading pair and intervals.';
+  }
+
+  const preferences = traders
+    .filter((t) => t.preferredTradingPair || t.preferredKlineIntervals)
+    .map((t) => {
+      const pair = t.preferredTradingPair?.symbol || 'N/A';
+      const intervals = t.preferredKlineIntervals?.map((k) => k.code).join(', ') || 'N/A';
+      return `- ${t.name}: ${pair} with intervals [${intervals}]`;
+    })
+    .join('\n');
+
+  return preferences || 'No trading preferences found for existing traders.';
+}
+
+/**
+ * Select trading pair and intervals using AI (pre-call)
+ */
+async function selectTradingContext(
+  existingTraders: Trader[],
+  tradingContext: Awaited<ReturnType<typeof fetchTradingContext>>
+): Promise<{
+  success: boolean;
+  tradingPair?: string;
+  klineIntervals?: string[];
+  reasoning?: string;
+  error?: string;
+}> {
+  const client = new DeepSeekChatClient({
+    temperature: 0.7,
+    maxTokens: 1000,
   });
 
-  return table;
+  const tools = [selectTradingContextTool];
+
+  const existingPreferences = formatExistingTradingPreferences(existingTraders);
+  const availablePairs = tradingContext.tradingPairs.map((p) => p.symbol).join(', ');
+  const availableIntervals = tradingContext.klineIntervals
+    .map((i) => `${i.code} (${i.label})`)
+    .join(', ');
+
+  const userPrompt = `Select a NEW trading pair and kline intervals combination for a trader.
+
+Existing traders' preferences:
+${existingPreferences}
+
+Available trading pairs: ${availablePairs}
+Available kline intervals: ${availableIntervals}
+
+Requirements:
+1. Choose a trading pair and intervals that DIFFER from existing combinations
+2. Consider the characteristics: volatility pairs (SOL, DOGE) for scalping, stable pairs (BTC, ETH) for swing/trend
+3. Select 2-4 intervals that work together (e.g., 1m+5m for scalping, 1h+4h+1d for swing)
+4. Avoid duplicating existing trader selections
+
+Use the select_trading_context tool to make your selection.`;
+
+  try {
+    const response = await client.chatWithTools(
+      userPrompt,
+      TRADING_CONTEXT_SELECTION_PROMPT,
+      tools
+    );
+
+    if (response.toolCalls && response.toolCalls.length > 0) {
+      const toolCall = response.toolCalls[0];
+
+      if (toolCall.name === 'select_trading_context') {
+        try {
+          const selection = JSON.parse(toolCall.arguments);
+          return {
+            success: true,
+            tradingPair: selection.tradingPair,
+            klineIntervals: selection.klineIntervals,
+            reasoning: selection.reasoning,
+          };
+        } catch (parseError) {
+          console.error('[selectTradingContext] JSON parse error:', parseError);
+          return {
+            success: false,
+            error: `Failed to parse selection: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
+          };
+        }
+      }
+    }
+
+    return {
+      success: false,
+      error: 'No trading context was selected.',
+    };
+  } catch (error) {
+    console.error('[selectTradingContext] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Fetch available trading pairs and intervals for context
+ */
+async function fetchTradingContext(): Promise<{
+  tradingPairs: Array<{ symbol: string; baseAsset: string; quoteAsset: string }>;
+  klineIntervals: Array<{ code: string; label: string; seconds: number }>;
+}> {
+  try {
+    const [pairsRes, intervalsRes] = await Promise.all([
+      fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/trading-pairs`),
+      fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/kline-intervals`),
+    ]);
+
+    const [pairsData, intervalsData] = await Promise.all([
+      pairsRes.ok ? pairsRes.json() : Promise.resolve([]),
+      intervalsRes.ok ? intervalsRes.json() : Promise.resolve([]),
+    ]);
+
+    return {
+      tradingPairs: pairsData,
+      klineIntervals: intervalsData,
+    };
+  } catch (error) {
+    console.error('[fetchTradingContext] Error:', error);
+    return {
+      tradingPairs: [],
+      klineIntervals: [],
+    };
+  }
 }
 
 /**
@@ -57,10 +208,40 @@ export async function generateSingleTrader(
   total: number = 1
 ): Promise<{
   success: boolean;
-  trader?: Partial<Trader> & { status?: string };
+  trader?: Partial<Trader> & {
+    status?: string;
+    preferredTradingPair?: string;
+    preferredKlineIntervals?: string[];
+  };
   error?: string;
   reasoning?: string;
 }> {
+  // Fetch trading context
+  const tradingContext = await fetchTradingContext();
+
+  // STEP 1: Select trading pair and intervals (pre-call)
+  console.log('[generateSingleTrader] Step 1: Selecting trading context...');
+  const contextSelection = await selectTradingContext(existingTraders, tradingContext);
+
+  if (
+    !contextSelection.success ||
+    !contextSelection.tradingPair ||
+    !contextSelection.klineIntervals
+  ) {
+    return {
+      success: false,
+      error: `Failed to select trading context: ${contextSelection.error || 'Unknown error'}`,
+    };
+  }
+
+  console.log('[generateSingleTrader] Trading context selected:', {
+    tradingPair: contextSelection.tradingPair,
+    klineIntervals: contextSelection.klineIntervals,
+    reasoning: contextSelection.reasoning,
+  });
+
+  // STEP 2: Generate trader configuration with selected context
+  console.log('[generateSingleTrader] Step 2: Generating trader configuration...');
   const client = new DeepSeekChatClient({
     temperature: 0.8,
     maxTokens: 2000,
@@ -69,20 +250,29 @@ export async function generateSingleTrader(
   // Bind the create trader tool
   const tools = [createTraderTool];
 
-  // Format existing traders
-  const tradersTable = formatExistingTradersTable(existingTraders);
+  // Format existing traders - only descriptions
+  const tradersDescriptions = formatExistingTradersDescriptions(existingTraders);
 
-  // Create user prompt
-  const userPrompt = `Analyze the existing traders below and create a NEW, UNIQUE trader configuration with a different strategy, focus, or approach:
+  // Create user prompt with selected trading context
+  const userPrompt = `Analyze the existing trader descriptions below and create a NEW, UNIQUE trader configuration with a different strategy, focus, or approach:
 
-${tradersTable}
+Existing Traders:
+${tradersDescriptions}
+
+**ASSIGNED Trading Context:**
+- Trading Pair: ${contextSelection.tradingPair}
+- Kline Intervals: ${contextSelection.klineIntervals.join(', ')}
+
+Context Selection Reasoning: ${contextSelection.reasoning}
 
 Requirements:
-1. Create a trader with a unique name not in the list above
-2. Choose a trading strategy and focus that differs from existing traders
+1. Create a trader with a unique strategy/approach not similar to descriptions above
+2. Design your strategy specifically for the ASSIGNED trading pair and intervals above
 3. Set parameters that optimize for both profitability AND risk control
 4. Consider different market conditions, timeframes, or asset classes
-5. Provide a clear description explaining the trader's unique approach
+5. Write a CONCISE description (1-2 sentences) highlighting key differentiators
+
+IMPORTANT: The trading pair and intervals are pre-selected. Focus on creating a unique strategy that works well with these parameters.
 
 Use the create_trader tool to generate the configuration.`;
 
@@ -141,8 +331,10 @@ Use the create_trader tool to generate the configuration.`;
           const traderConfig = JSON.parse(toolCall.arguments);
           console.log('[generateSingleTrader] Parsed trader config:', traderConfig);
 
-          // Add default status
+          // Add default status and selected trading context
           traderConfig.status = 'enabled';
+          traderConfig.preferredTradingPair = contextSelection.tradingPair;
+          traderConfig.preferredKlineIntervals = contextSelection.klineIntervals;
 
           return {
             success: true,
@@ -172,6 +364,9 @@ Use the create_trader tool to generate the configuration.`;
           console.log('[generateSingleTrader] Found trader config in content:', parsed);
 
           parsed.status = 'enabled';
+          parsed.preferredTradingPair = contextSelection.tradingPair;
+          parsed.preferredKlineIntervals = contextSelection.klineIntervals;
+
           return {
             success: true,
             trader: parsed,
@@ -216,14 +411,30 @@ export async function generateMultipleTraders(
   onProgress?: (
     current: number,
     total: number,
-    trader: Partial<Trader> & { status?: string }
+    trader: Partial<Trader> & {
+      status?: string;
+      preferredTradingPair?: string;
+      preferredKlineIntervals?: string[];
+    }
   ) => void
 ): Promise<{
   success: boolean;
-  traders?: Array<Partial<Trader> & { status?: string }>;
+  traders?: Array<
+    Partial<Trader> & {
+      status?: string;
+      preferredTradingPair?: string;
+      preferredKlineIntervals?: string[];
+    }
+  >;
   errors?: string[];
 }> {
-  const generatedTraders: Array<Partial<Trader> & { status?: string }> = [];
+  const generatedTraders: Array<
+    Partial<Trader> & {
+      status?: string;
+      preferredTradingPair?: string;
+      preferredKlineIntervals?: string[];
+    }
+  > = [];
   const errors: string[] = [];
   const allTraders = [...existingTraders];
 

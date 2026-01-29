@@ -33,6 +33,14 @@ export interface BinanceTradingPair {
   quoteAsset: string;
   status: string;
   contractType: string;
+  volume24h?: number;
+  quoteVolume24h?: number;
+}
+
+export interface Binance24hTicker {
+  symbol: string;
+  volume: string; // 交易量（基础货币）
+  quoteVolume: string; // 成交额（计价货币，USDT）
 }
 
 export async function getExchangeInfo(): Promise<BinanceTradingPair[]> {
@@ -61,4 +69,25 @@ export async function getExchangeInfo(): Promise<BinanceTradingPair[]> {
     }));
 
   return pairs;
+}
+
+/**
+ * 获取所有交易对的24小时ticker数据
+ */
+export async function get24hTickers(): Promise<Binance24hTicker[]> {
+  const url = `${BINANCE_FUTURES_BASE_URL}/fapi/v1/ticker/24hr`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Binance API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  return data.map((ticker: { symbol: string; volume: string; quoteVolume: string }) => ({
+    symbol: ticker.symbol,
+    volume: ticker.volume,
+    quoteVolume: ticker.quoteVolume,
+  }));
 }

@@ -7,6 +7,8 @@ import {
   integer,
   numeric,
   pgEnum,
+  index,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 // 交易员状态枚举
@@ -67,6 +69,9 @@ export const traders = pgTable('traders', {
   activeTimeEnd: text('active_time_end').notNull(), // 激活时段结束（HH:mm）
   tradingStrategy: tradingStrategyEnum('trading_strategy').notNull(), // 交易策略类型
   holdingPeriod: holdingPeriodEnum('holding_period').notNull(), // 持仓周期偏好
+
+  // 偏好设置
+  preferredTradingPairId: integer('preferred_trading_pair_id').references(() => tradingPairs.id), // 偏好交易对（多对一）
 });
 
 export type Trader = typeof traders.$inferSelect;
@@ -80,7 +85,11 @@ export const tradingPairs = pgTable('trading_pairs', {
   quoteAsset: text('quote_asset').notNull(), // 'USDT'
   status: text('status').default('active').notNull(), // 'active', 'inactive'
   contractType: text('contract_type').default('perpetual').notNull(),
+  volume24h: numeric('volume_24h', { precision: 20, scale: 8 }), // 24小时成交量（USDT）
+  quoteVolume24h: numeric('quote_volume_24h', { precision: 20, scale: 8 }), // 24小时成交额（USDT）
+  volumeRank: integer('volume_rank'), // 成交量排名
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 // K线周期表
@@ -98,6 +107,27 @@ export type TradingPair = typeof tradingPairs.$inferSelect;
 export type NewTradingPair = typeof tradingPairs.$inferInsert;
 export type KlineInterval = typeof klineIntervals.$inferSelect;
 export type NewKlineInterval = typeof klineIntervals.$inferInsert;
+
+// 交易员与K线周期多对多关联表
+export const traderKlineIntervals = pgTable(
+  'trader_kline_intervals',
+  {
+    traderId: integer('trader_id')
+      .notNull()
+      .references(() => traders.id, { onDelete: 'cascade' }),
+    klineIntervalId: integer('kline_interval_id')
+      .notNull()
+      .references(() => klineIntervals.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.traderId, table.klineIntervalId] }),
+    traderIdx: index('trader_kline_intervals_trader_idx').on(table.traderId),
+    klineIntervalIdx: index('trader_kline_intervals_interval_idx').on(table.klineIntervalId),
+  })
+);
+
+export type TraderKlineInterval = typeof traderKlineIntervals.$inferSelect;
+export type NewTraderKlineInterval = typeof traderKlineIntervals.$inferInsert;
 
 // 系统配置表
 export const systemConfigurations = pgTable('system_configurations', {

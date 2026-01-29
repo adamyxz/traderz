@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
 import { Plus, Search, SortAsc, ChevronDown, X, Sparkles } from 'lucide-react';
@@ -9,6 +9,22 @@ import EditTraderModal from './edit-trader-modal';
 import AiGenerateModal from './ai-generate-modal';
 import TraderCard from './trader-card';
 import type { Trader } from '@/db/schema';
+
+interface TradingPair {
+  id: number;
+  symbol: string;
+}
+
+interface KlineInterval {
+  id: number;
+  code: string;
+  label: string;
+}
+
+interface TraderWithRelations extends Trader {
+  preferredTradingPair?: TradingPair;
+  preferredKlineIntervals?: KlineInterval[];
+}
 
 type SortField =
   | 'name'
@@ -40,7 +56,7 @@ const isTraderActive = (activeTimeStart: string, activeTimeEnd: string): boolean
 };
 
 export default function TradersAdminPage() {
-  const [traders, setTraders] = useState<Trader[]>([]);
+  const [traders, setTraders] = useState<TraderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -54,12 +70,17 @@ export default function TradersAdminPage() {
   const [editingTrader, setEditingTrader] = useState<Trader | null>(null);
   const [deletingTraderId, setDeletingTraderId] = useState<number | null>(null);
 
+  // Track if component is mounted to prevent state updates after unmount
+  const isMounted = useRef(true);
+
   // Fetch traders from API
   useEffect(() => {
+    isMounted.current = true;
     fetchTraders();
 
-    // Cleanup function to clear refresh interval
+    // Cleanup function to clear refresh interval and mark as unmounted
     return () => {
+      isMounted.current = false;
       const interval = (
         window as Window & { traderRefreshInterval?: ReturnType<typeof setInterval> }
       ).traderRefreshInterval;
@@ -77,11 +98,17 @@ export default function TradersAdminPage() {
       const response = await fetch('/api/traders');
       if (!response.ok) throw new Error('Failed to fetch traders');
       const data = await response.json();
-      setTraders(data);
+      // Only update state if component is still mounted
+      if (isMounted.current) {
+        setTraders(data);
+      }
     } catch (error) {
       console.error('Error fetching traders:', error);
     } finally {
-      setLoading(false);
+      // Only update loading state if component is still mounted
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -124,7 +151,12 @@ export default function TradersAdminPage() {
   const paginatedTraders = sortedTraders.slice(startIndex, startIndex + itemsPerPage);
 
   // CRUD operations
-  const handleCreateTrader = async (newTrader: Partial<Trader>) => {
+  const handleCreateTrader = async (
+    newTrader: Partial<Trader> & {
+      preferredTradingPairId?: number | null;
+      preferredKlineIntervalIds?: number[];
+    }
+  ) => {
     try {
       const response = await fetch('/api/traders', {
         method: 'POST',
@@ -134,16 +166,20 @@ export default function TradersAdminPage() {
 
       if (!response.ok) throw new Error('Failed to create trader');
 
-      const created = await response.json();
-      setTraders([created, ...traders]);
-      setIsCreateModalOpen(false);
+      const created: TraderWithRelations = await response.json();
+      if (isMounted.current) {
+        setTraders([created, ...traders]);
+        setIsCreateModalOpen(false);
+      }
     } catch (error) {
       console.error('Error creating trader:', error);
-      alert('Creation failed, please try again');
+      if (isMounted.current) {
+        alert('Creation failed, please try again');
+      }
     }
   };
 
-  const handleUpdateTrader = async (updatedTrader: Trader) => {
+  const handleUpdateTrader = async (updatedTrader: TraderWithRelations) => {
     try {
       const response = await fetch(`/api/traders/${updatedTrader.id}`, {
         method: 'PUT',
@@ -154,11 +190,15 @@ export default function TradersAdminPage() {
       if (!response.ok) throw new Error('Failed to update trader');
 
       const updated = await response.json();
-      setTraders(traders.map((t) => (t.id === updated.id ? updated : t)));
-      setEditingTrader(null);
+      if (isMounted.current) {
+        setTraders(traders.map((t) => (t.id === updated.id ? updated : t)));
+        setEditingTrader(null);
+      }
     } catch (error) {
       console.error('Error updating trader:', error);
-      alert('Update failed, please try again');
+      if (isMounted.current) {
+        alert('Update failed, please try again');
+      }
     }
   };
 
@@ -170,11 +210,15 @@ export default function TradersAdminPage() {
 
       if (!response.ok) throw new Error('Failed to delete trader');
 
-      setTraders(traders.filter((t) => t.id !== id));
-      setDeletingTraderId(null);
+      if (isMounted.current) {
+        setTraders(traders.filter((t) => t.id !== id));
+        setDeletingTraderId(null);
+      }
     } catch (error) {
       console.error('Error deleting trader:', error);
-      alert('Deletion failed, please try again');
+      if (isMounted.current) {
+        alert('Deletion failed, please try again');
+      }
     }
   };
 
@@ -467,7 +511,10 @@ export default function TradersAdminPage() {
               const maxRefreshes = 24; // 24 * 5 = 120 seconds
 
               const refreshInterval = setInterval(() => {
-                fetchTraders();
+                // Only fetch if component is still mounted
+                if (isMounted.current) {
+                  fetchTraders();
+                }
                 refreshCount++;
 
                 if (refreshCount >= maxRefreshes) {
@@ -477,9 +524,11 @@ export default function TradersAdminPage() {
               }, 5000);
 
               // Save interval ID to clear it if needed
-              (
-                window as Window & { traderRefreshInterval?: ReturnType<typeof setInterval> }
-              ).traderRefreshInterval = refreshInterval;
+              if (isMounted.current) {
+                (
+                  window as Window & { traderRefreshInterval?: ReturnType<typeof setInterval> }
+                ).traderRefreshInterval = refreshInterval;
+              }
             }}
           />
 

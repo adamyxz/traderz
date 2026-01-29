@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { traders } from '@/db/schema';
+import { traders, tradingPairs, klineIntervals, traderKlineIntervals } from '@/db/schema';
 import { generateMultipleTraders } from '@/lib/deepseek';
 
 /**
@@ -20,6 +20,15 @@ export async function POST(request: NextRequest) {
     // Fetch existing traders
     const existingTraders = await db.select().from(traders).orderBy(traders.createdAt);
 
+    // Fetch trading pairs and intervals for mapping
+    const [allPairs, allIntervals] = await Promise.all([
+      db.select().from(tradingPairs),
+      db.select().from(klineIntervals),
+    ]);
+
+    // Create maps for quick lookup
+    const pairSymbolToId = Object.fromEntries(allPairs.map((p) => [p.symbol, p.id]));
+
     // Generate new traders
     const result = await generateMultipleTraders(existingTraders, count);
 
@@ -38,6 +47,58 @@ export async function POST(request: NextRequest) {
 
     for (const traderConfig of result.traders) {
       try {
+        // Validate required fields
+        if (
+          !traderConfig.name ||
+          !traderConfig.aggressivenessLevel ||
+          !traderConfig.maxLeverage ||
+          !traderConfig.minLeverage ||
+          !traderConfig.maxPositions ||
+          !traderConfig.maxPositionSize ||
+          !traderConfig.minTradeAmount ||
+          !traderConfig.maxDrawdown ||
+          !traderConfig.stopLossThreshold ||
+          !traderConfig.positionStopLoss ||
+          !traderConfig.positionTakeProfit ||
+          !traderConfig.maxConsecutiveLosses ||
+          !traderConfig.dailyMaxLoss ||
+          !traderConfig.riskPreferenceScore ||
+          !traderConfig.heartbeatInterval ||
+          !traderConfig.activeTimeStart ||
+          !traderConfig.activeTimeEnd ||
+          !traderConfig.tradingStrategy ||
+          !traderConfig.holdingPeriod
+        ) {
+          console.error('Invalid trader config - missing required fields:', traderConfig);
+          continue;
+        }
+
+        // Map trading pair symbol to ID
+        let preferredTradingPairId: number | null = null;
+        if (traderConfig.preferredTradingPair) {
+          const symbol = traderConfig.preferredTradingPair.toUpperCase().trim();
+          preferredTradingPairId = pairSymbolToId[symbol] || null;
+          if (!preferredTradingPairId) {
+            console.warn(`Trading pair not found: ${symbol}, skipping`);
+          }
+        }
+
+        // Map kline interval codes to IDs
+        let preferredKlineIntervalIds: number[] = [];
+        if (
+          traderConfig.preferredKlineIntervals &&
+          Array.isArray(traderConfig.preferredKlineIntervals)
+        ) {
+          preferredKlineIntervalIds = traderConfig.preferredKlineIntervals
+            .map((code: string) => {
+              const normalizedCode = code.toLowerCase().trim();
+              // Try to find the interval by code (case-insensitive)
+              const interval = allIntervals.find((i) => i.code.toLowerCase() === normalizedCode);
+              return interval ? interval.id : null;
+            })
+            .filter((id): id is number => id !== null);
+        }
+
         // Convert numeric fields to strings as expected by database schema
         const newTrader = await db
           .insert(traders)
@@ -65,8 +126,20 @@ export async function POST(request: NextRequest) {
             activeTimeEnd: traderConfig.activeTimeEnd,
             tradingStrategy: traderConfig.tradingStrategy,
             holdingPeriod: traderConfig.holdingPeriod,
+            preferredTradingPairId,
           })
           .returning();
+
+        const traderId = newTrader[0].id;
+
+        // Insert kline interval relations if any
+        if (preferredKlineIntervalIds.length > 0) {
+          const intervalRelations = preferredKlineIntervalIds.map((klineIntervalId) => ({
+            traderId,
+            klineIntervalId,
+          }));
+          await db.insert(traderKlineIntervals).values(intervalRelations);
+        }
 
         createdTraders.push(newTrader[0]);
       } catch (error) {

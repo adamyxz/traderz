@@ -193,6 +193,43 @@ export const RiskAssessmentSchema = z.object({
 export type RiskAssessment = z.infer<typeof RiskAssessmentSchema>;
 
 /**
+ * Select trading context tool
+ * Selects optimal trading pair and kline intervals
+ */
+export const selectTradingContextTool = tool(
+  async (args) => {
+    // This tool returns the selection for validation
+    return JSON.stringify(
+      {
+        success: true,
+        message: 'Trading context selected successfully',
+        selection: args,
+      },
+      null,
+      2
+    );
+  },
+  {
+    name: 'select_trading_context',
+    description:
+      "Select a trading pair and kline intervals for a new trader. Consider existing traders' preferences to ensure diversity.",
+    schema: z.object({
+      tradingPair: z.string().describe('Trading pair symbol (e.g., BTCUSDT, ETHUSDT)'),
+      klineIntervals: z
+        .array(z.string())
+        .describe(
+          'Array of 2-4 kline interval codes (e.g., ["1m", "5m", "1h"]) that match the trading style'
+        ),
+      reasoning: z
+        .string()
+        .describe(
+          'Brief explanation for this selection (why it differs from existing and what strategy it supports)'
+        ),
+    }),
+  }
+);
+
+/**
  * Create trader tool
  * Creates a new trader with specified configuration
  */
