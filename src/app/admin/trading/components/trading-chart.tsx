@@ -1,15 +1,32 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { createChart, CrosshairMode, ColorType, CandlestickSeries } from 'lightweight-charts';
-import type { CandlestickData, Time, IChartApi } from 'lightweight-charts';
+import {
+  createChart,
+  CrosshairMode,
+  ColorType,
+  CandlestickSeries,
+  HistogramSeries,
+} from 'lightweight-charts';
+import type { CandlestickData, Time, IChartApi, ISeriesApi } from 'lightweight-charts';
 import type { KlineData, ConnectionStatus } from '@/lib/trading/types';
+
+interface ExtendedWebSocket extends WebSocket {
+  __cleanupTimeout?: ReturnType<typeof setTimeout>;
+}
 
 interface TradingChartProps {
   symbol: string;
   interval: string;
   isRunning: boolean;
   onStatusChange: (status: ConnectionStatus) => void;
+}
+
+// Real-time market data display
+interface MarketData {
+  trades: number;
+  takerBuyVolume: number;
+  takerBuyRatio: number;
 }
 
 export default function TradingChart({
@@ -20,20 +37,35 @@ export default function TradingChart({
 }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candlestickSeriesRef = useRef<CandlestickSeries<Time> | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const wsGenerationRef = useRef(0); // Track WebSocket generation
+  const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const wsRef = useRef<ExtendedWebSocket | null>(null);
+  const wsGenerationRef = useRef(0);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wsError, setWsError] = useState<string | null>(null);
   const connectionAttemptRef = useRef<number | null>(null);
 
+  // Real-time market data
+  const [marketData, setMarketData] = useState<MarketData>({
+    trades: 0,
+    takerBuyVolume: 0,
+    takerBuyRatio: 0,
+  });
+
+  // Use ref to store the latest onStatusChange callback
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
+
   // Initialize chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    const chart = createChart(chartContainerRef.current, {
+    const container = chartContainerRef.current;
+    const initialWidth = container.clientWidth || 800;
+
+    const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#d1d5db',
@@ -42,8 +74,8 @@ export default function TradingChart({
         vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
         horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
       },
-      width: chartContainerRef.current.clientWidth,
-      height: 600,
+      width: initialWidth,
+      height: 700, // Increased height to accommodate volume chart
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
@@ -53,6 +85,7 @@ export default function TradingChart({
       },
     });
 
+    // Candlestick series (K-line)
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
       downColor: '#ef4444',
@@ -62,29 +95,74 @@ export default function TradingChart({
       wickDownColor: '#ef4444',
     });
 
+    // Volume histogram series (at the bottom)
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: '#26a69a',
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: 'volume',
+    });
+
+    // Set volume scale to bottom
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
+    });
+
     chartRef.current = chart;
     candlestickSeriesRef.current = candlestickSeries;
+    volumeSeriesRef.current = volumeSeries;
 
-    // Handle resize
-    const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
+    // Handle resize with ResizeObserver
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries.length === 0 || !chartRef.current) return;
+
+      const entry = entries[0];
+      const newWidth = entry.contentRect.width;
+
+      if (newWidth > 0) {
         chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
+          width: newWidth,
         });
+      }
+    });
+
+    resizeObserver.observe(container);
+
+    const handleWindowResize = () => {
+      if (container && chartRef.current) {
+        const width = container.clientWidth;
+        if (width > 0) {
+          chartRef.current.applyOptions({ width });
+        }
       }
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', handleWindowResize);
+
+    const initialResizeTimeout = setTimeout(() => {
+      if (container && chartRef.current) {
+        const width = container.clientWidth;
+        if (width > 0) {
+          chartRef.current.applyOptions({ width });
+        }
+      }
+    }, 100);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', handleWindowResize);
+      resizeObserver.disconnect();
+      clearTimeout(initialResizeTimeout);
       chart.remove();
     };
   }, []);
 
   // Load historical data
   useEffect(() => {
-    if (!candlestickSeriesRef.current) return;
+    if (!candlestickSeriesRef.current || !volumeSeriesRef.current) return;
 
     const loadHistoricalData = async () => {
       setIsLoading(true);
@@ -110,7 +188,19 @@ export default function TradingChart({
           close: d.close,
         }));
 
-        candlestickSeriesRef.current.setData(candlestickData);
+        // Volume data with color based on price movement
+        const volumeData: Array<{
+          time: Time;
+          value: number;
+          color: string;
+        }> = data.map((d) => ({
+          time: d.time as Time,
+          value: d.volume,
+          color: d.close >= d.open ? '#22c55e80' : '#ef444480', // Semi-transparent green/red
+        }));
+
+        candlestickSeriesRef.current?.setData(candlestickData);
+        volumeSeriesRef.current?.setData(volumeData);
       } catch (error) {
         console.error('Error loading historical data:', error);
         setError(error instanceof Error ? error.message : 'Failed to load data');
@@ -124,11 +214,11 @@ export default function TradingChart({
 
   // WebSocket connection for real-time updates
   useEffect(() => {
-    if (!isRunning || !candlestickSeriesRef.current) {
+    if (!isRunning || !candlestickSeriesRef.current || !volumeSeriesRef.current) {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
-        onStatusChange('disconnected');
+        onStatusChangeRef.current('disconnected');
       }
       if (connectionAttemptRef.current) {
         clearTimeout(connectionAttemptRef.current);
@@ -137,40 +227,40 @@ export default function TradingChart({
       return;
     }
 
-    // Increment generation for this effect run
     const currentGeneration = ++wsGenerationRef.current;
 
-    // Cancel any pending cleanup
     if (wsRef.current && wsRef.current.__cleanupTimeout) {
       clearTimeout(wsRef.current.__cleanupTimeout);
       delete wsRef.current.__cleanupTimeout;
     }
 
-    onStatusChange('connecting');
+    onStatusChangeRef.current('connecting');
     setWsError(null);
 
     const wsSymbol = symbol.toLowerCase();
     const wsUrl = `wss://fstream.binance.com/ws/${wsSymbol}@kline_${interval}`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl) as ExtendedWebSocket;
 
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // Only process events for the current generation
       if (currentGeneration === wsGenerationRef.current) {
-        onStatusChange('connected');
+        onStatusChangeRef.current('connected');
         setWsError(null);
       }
     };
 
     ws.onmessage = (event) => {
-      // Only process events for the current generation
       if (currentGeneration === wsGenerationRef.current) {
         try {
           const message = JSON.parse(event.data);
           const kline = message.k;
 
-          if (kline && candlestickSeriesRef.current) {
+          if (kline && candlestickSeriesRef.current && volumeSeriesRef.current) {
+            const isUp = parseFloat(kline.c) >= parseFloat(kline.o);
+            const color = isUp ? '#22c55e80' : '#ef444480';
+
+            // Update candlestick
             const candlestickData: CandlestickData<Time> = {
               time: Math.floor(kline.t / 1000) as Time,
               open: parseFloat(kline.o),
@@ -180,6 +270,22 @@ export default function TradingChart({
             };
 
             candlestickSeriesRef.current.update(candlestickData);
+
+            // Update volume
+            const volumeData = {
+              time: Math.floor(kline.t / 1000) as Time,
+              value: parseFloat(kline.v),
+              color,
+            };
+
+            volumeSeriesRef.current.update(volumeData);
+
+            // Update real-time market data
+            setMarketData({
+              trades: parseInt(kline.n), // Number of trades
+              takerBuyVolume: parseFloat(kline.V), // Taker buy base asset volume
+              takerBuyRatio: parseFloat(kline.V) / parseFloat(kline.v), // Buy ratio
+            });
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -191,15 +297,14 @@ export default function TradingChart({
       if (currentGeneration === wsGenerationRef.current) {
         console.error('WebSocket error:', error);
         setWsError('WebSocket 连接失败，请检查网络或代理设置');
-        onStatusChange('disconnected');
+        onStatusChangeRef.current('disconnected');
       }
     };
 
     ws.onclose = (event) => {
       if (currentGeneration === wsGenerationRef.current) {
         console.log('WebSocket closed:', event.code, event.reason);
-        onStatusChange('disconnected');
-        // Auto-reconnect after 3 seconds if not intentionally stopped
+        onStatusChangeRef.current('disconnected');
         if (isRunning && !event.wasClean) {
           connectionAttemptRef.current = window.setTimeout(() => {
             console.log('Attempting to reconnect...');
@@ -209,13 +314,11 @@ export default function TradingChart({
     };
 
     return () => {
-      // Cancel any pending cleanup timeout on this WebSocket
       if (ws.__cleanupTimeout) {
         clearTimeout(ws.__cleanupTimeout);
         delete ws.__cleanupTimeout;
       }
 
-      // Delay cleanup slightly to avoid warning in Strict Mode
       const cleanupTimeout = setTimeout(() => {
         if (wsRef.current === ws) {
           if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
@@ -225,15 +328,43 @@ export default function TradingChart({
         }
       }, 100);
 
-      // Store the cleanup timeout so it can be cancelled
       if (wsRef.current === ws) {
         ws.__cleanupTimeout = cleanupTimeout;
       }
     };
-  }, [isRunning, symbol, interval, onStatusChange]);
+  }, [isRunning, symbol, interval]);
 
   return (
     <div className="relative">
+      {/* Market Data Panel */}
+      <div className="absolute left-4 top-4 z-10 flex gap-4 rounded-lg bg-gray-900/95 border border-gray-700/50 px-4 py-2 text-xs">
+        <div className="flex flex-col">
+          <span className="text-gray-400">交易次数</span>
+          <span className="text-lg font-semibold text-white">
+            {marketData.trades.toLocaleString()}
+          </span>
+        </div>
+        <div className="w-px bg-gray-700" />
+        <div className="flex flex-col">
+          <span className="text-gray-400">主动买入量</span>
+          <span className="text-lg font-semibold text-emerald-400">
+            {marketData.takerBuyVolume.toFixed(4)}
+          </span>
+        </div>
+        <div className="w-px bg-gray-700" />
+        <div className="flex flex-col">
+          <span className="text-gray-400">买入比例</span>
+          <span
+            className={`text-lg font-semibold ${
+              marketData.takerBuyRatio >= 0.5 ? 'text-emerald-400' : 'text-red-400'
+            }`}
+          >
+            {(marketData.takerBuyRatio * 100).toFixed(1)}%
+          </span>
+        </div>
+      </div>
+
+      {/* Loading indicator */}
       {isLoading && !wsError && (
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <div className="flex items-center gap-2 rounded-lg bg-gray-800/90 px-4 py-2 text-white">
@@ -242,6 +373,8 @@ export default function TradingChart({
           </div>
         </div>
       )}
+
+      {/* Error display */}
       {(error || wsError) && !isLoading && (
         <div className="absolute left-1/2 top-1/2 z-10 flex w-full max-w-lg -translate-x-1/2 -translate-y-1/2">
           <div className="w-full rounded-lg bg-red-500/10 border border-red-500/50 p-6 text-center">
@@ -257,6 +390,8 @@ export default function TradingChart({
           </div>
         </div>
       )}
+
+      {/* Chart container */}
       <div ref={chartContainerRef} className="rounded-lg border border-gray-700/50" />
     </div>
   );

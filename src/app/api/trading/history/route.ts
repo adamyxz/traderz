@@ -22,15 +22,37 @@ export async function GET(request: NextRequest) {
       throw new Error(`Binance API error: ${data.msg} (code: ${data.code})`);
     }
 
-    // Transform Binance data to our format
-    const klines = data.map((k: [number, string, string, string, string, string]) => ({
-      time: k[0] / 1000, // Convert to seconds
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
-    }));
+    // Transform Binance data to our format with all fields
+    const klines = data.map(
+      (
+        k: [
+          number, // 0: Open time
+          string, // 1: Open
+          string, // 2: High
+          string, // 3: Low
+          string, // 4: Close
+          string, // 5: Volume
+          number, // 6: Close time
+          string, // 7: Quote volume
+          number, // 8: Trades
+          string, // 9: Taker buy base volume
+          string, // 10: Taker buy quote volume
+          string, // 11: Ignore
+        ]
+      ) => ({
+        time: k[0] / 1000, // Convert to seconds
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        volume: parseFloat(k[5]),
+        closeTime: k[6] / 1000,
+        quoteVolume: parseFloat(k[7]),
+        trades: k[8],
+        takerBuyBaseVolume: parseFloat(k[9]),
+        takerBuyQuoteVolume: parseFloat(k[10]),
+      })
+    );
 
     return NextResponse.json(klines);
   } catch (error) {

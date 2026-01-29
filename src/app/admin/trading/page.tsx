@@ -3,28 +3,24 @@
 import { useState, useEffect } from 'react';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
-import TradingControls from './components/trading-controls';
-import TradingChart from './components/trading-chart';
-import ConnectionStatus from './components/connection-status';
-import type {
-  TradingPair,
-  KlineInterval,
-  ConnectionStatus as StatusType,
-} from '@/lib/trading/types';
+import MultiChartContainer from './components/multi-chart-container';
+import type { TradingPair, KlineInterval } from '@/lib/trading/types';
 
 export default function TradingPage() {
-  const [isRunning, setIsRunning] = useState(true); // Default to running
   const [selectedPair, setSelectedPair] = useState('BTCUSDT');
   const [selectedInterval, setSelectedInterval] = useState('1m');
   const [pairs, setPairs] = useState<TradingPair[]>([]);
   const [intervals, setIntervals] = useState<KlineInterval[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<StatusType>('disconnected');
   const [loading, setLoading] = useState(true);
 
   // Fetch trading pairs and intervals on mount
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Sync trading pairs from Binance on first load
+        await fetch('/api/trading/sync-pairs', { method: 'POST' });
+
+        // Fetch pairs and intervals
         const [pairsRes, intervalsRes] = await Promise.all([
           fetch('/api/trading/pairs'),
           fetch('/api/trading/intervals'),
@@ -39,6 +35,15 @@ export default function TradingPage() {
 
         setPairs(pairsData);
         setIntervals(intervalsData);
+
+        // Set default to first pair if available
+        if (pairsData.length > 0) {
+          setSelectedPair(pairsData[0].symbol);
+        }
+        // Set default to first interval if available
+        if (intervalsData.length > 0) {
+          setSelectedInterval(intervalsData[0].code);
+        }
       } catch (error) {
         console.error('Error fetching trading data:', error);
       } finally {
@@ -48,22 +53,6 @@ export default function TradingPage() {
 
     fetchData();
   }, []);
-
-  const handleStart = () => {
-    setIsRunning(true);
-  };
-
-  const handleStop = () => {
-    setIsRunning(false);
-  };
-
-  const handlePairChange = (pair: string) => {
-    setSelectedPair(pair);
-  };
-
-  const handleIntervalChange = (interval: string) => {
-    setSelectedInterval(interval);
-  };
 
   if (loading) {
     return (
@@ -86,34 +75,12 @@ export default function TradingPage() {
         <AdminHeader />
 
         <main className="p-8">
-          {/* Header */}
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-white">Trading View</h1>
-              <p className="mt-2 text-sm text-gray-400">Real-time cryptocurrency market data</p>
-            </div>
-            <ConnectionStatus status={connectionStatus} />
-          </div>
-
-          {/* Controls */}
-          <TradingControls
-            isRunning={isRunning}
-            selectedPair={selectedPair}
-            selectedInterval={selectedInterval}
+          {/* Multi-Chart Container */}
+          <MultiChartContainer
             pairs={pairs}
             intervals={intervals}
-            onStart={handleStart}
-            onStop={handleStop}
-            onPairChange={handlePairChange}
-            onIntervalChange={handleIntervalChange}
-          />
-
-          {/* Chart */}
-          <TradingChart
-            symbol={selectedPair}
-            interval={selectedInterval}
-            isRunning={isRunning}
-            onStatusChange={setConnectionStatus}
+            defaultSymbol={selectedPair}
+            defaultInterval={selectedInterval}
           />
         </main>
       </div>

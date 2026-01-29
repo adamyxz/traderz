@@ -26,3 +26,39 @@ export async function getKlines(
     volume: parseFloat(k[5]),
   }));
 }
+
+export interface BinanceTradingPair {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  status: string;
+  contractType: string;
+}
+
+export async function getExchangeInfo(): Promise<BinanceTradingPair[]> {
+  const url = `${BINANCE_FUTURES_BASE_URL}/fapi/v1/exchangeInfo`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Binance API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  // Extract USDT-margined trading pairs
+  const pairs: BinanceTradingPair[] = data.symbols
+    .filter(
+      (s: { quoteAsset: string; status: string }) =>
+        s.quoteAsset === 'USDT' && s.status === 'TRADING'
+    )
+    .map((s: { symbol: string; baseAsset: string; quoteAsset: string; contractType?: string }) => ({
+      symbol: s.symbol,
+      baseAsset: s.baseAsset,
+      quoteAsset: s.quoteAsset,
+      status: 'active',
+      contractType: s.contractType || 'perpetual',
+    }));
+
+  return pairs;
+}

@@ -98,3 +98,16 @@ export type TradingPair = typeof tradingPairs.$inferSelect;
 export type NewTradingPair = typeof tradingPairs.$inferInsert;
 export type KlineInterval = typeof klineIntervals.$inferSelect;
 export type NewKlineInterval = typeof klineIntervals.$inferInsert;
+
+// 系统配置表
+export const systemConfigurations = pgTable('system_configurations', {
+  id: serial('id').primaryKey(),
+  key: text('key').notNull().unique(), // 配置键，如 'trading_layout_config'
+  value: text('value').notNull(), // JSON字符串存储配置值
+  description: text('description'), // 配置描述
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export type SystemConfiguration = typeof systemConfigurations.$inferSelect;
+export type NewSystemConfiguration = typeof systemConfigurations.$inferInsert;
