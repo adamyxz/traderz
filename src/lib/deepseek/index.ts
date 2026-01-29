@@ -52,6 +52,7 @@ export {
   getTraderInfoTool,
   analyzeRiskTool,
   getMarketDataTool,
+  createTraderTool,
   defaultTools,
   toolCategories,
   createCustomTool,
@@ -93,6 +94,16 @@ export {
   debounce,
   throttle,
 } from './utils';
+
+// ============================================================================
+// AI Trader Generation
+// ============================================================================
+
+export {
+  generateSingleTrader,
+  generateMultipleTraders,
+  TRADER_GENERATION_SYSTEM_PROMPT,
+} from './generate-trader';
 
 // ============================================================================
 // Configuration

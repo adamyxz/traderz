@@ -189,6 +189,128 @@ export class DeepSeekChatClient extends DeepSeekLangChainClient {
   }
 
   /**
+   * Chat with tools - invokes model with tool calling enabled
+   * @param userPrompt - The user's prompt
+   * @param systemPrompt - Optional system prompt
+   * @param tools - Array of tools to make available to the model
+   * @returns Response with content and any tool calls made
+   */
+  async chatWithTools(
+    userPrompt: string,
+    systemPrompt: string,
+    tools: StructuredToolInterface[]
+  ): Promise<{
+    content: string;
+    toolCalls: Array<{ name: string; arguments: string }>;
+    totalTokens?: number;
+    eventId?: string;
+  }> {
+    this.validateApiKey();
+
+    const startTime = Date.now();
+    const { eventId } = eventBus.emitCallStarted({
+      modelType: this.modelType,
+      callType: 'chat',
+      systemPrompt,
+      userPrompt,
+      temperature: this.temperature,
+      maxTokens: this.maxTokens,
+    });
+
+    try {
+      const model = this.getModel();
+      const messages = this.prepareMessages(systemPrompt, userPrompt);
+
+      // Bind tools to the model
+      const modelWithTools = model.bindTools(tools);
+
+      // Invoke the model with tools
+      const response = await modelWithTools.invoke(messages);
+      const duration = Date.now() - startTime;
+
+      // Log response structure for debugging
+      console.log('[chatWithTools] Response structure:', {
+        contentType: typeof response.content,
+        contentIsArray: Array.isArray(response.content),
+        responseKeys: Object.keys(response),
+        hasToolCalls: !!('tool_calls' in response && response.tool_calls),
+        toolCalls: 'tool_calls' in response ? response.tool_calls : undefined,
+        content: response.content,
+      });
+
+      // Extract content and tool calls
+      let content = '';
+      const toolCalls: Array<{ name: string; arguments: string }> = [];
+
+      // First, check for tool_calls directly on response
+      if ('tool_calls' in response && Array.isArray(response.tool_calls)) {
+        console.log('[chatWithTools] Found tool_calls on response');
+        for (const tc of response.tool_calls) {
+          toolCalls.push({
+            name: tc.name || '',
+            arguments: JSON.stringify(tc.args || {}),
+          });
+          console.log('[chatWithTools] Tool call:', tc);
+        }
+      }
+
+      // Then process content
+      if (typeof response.content === 'string') {
+        content = response.content;
+      } else if (Array.isArray(response.content)) {
+        // Handle tool calls in response
+        for (const item of response.content) {
+          console.log('[chatWithTools] Processing item:', {
+            type: item.type,
+            item,
+          });
+          if (item.type === 'text') {
+            content += item.text;
+          } else if (item.type === 'tool-use') {
+            toolCalls.push({
+              name: String(item.tool || item.toolName || ''),
+              arguments: JSON.stringify(item.args || {}),
+            });
+          } else if (item.lc_name === 'ToolMessage' || item.constructor?.name === 'ToolMessage') {
+            // LangChain ToolMessage format
+            toolCalls.push({
+              name: String(item.tool_call?.name || item.name || ''),
+              arguments: JSON.stringify(item.tool_call?.args || item.args || {}),
+            });
+          }
+        }
+      }
+
+      // Calculate approximate token count (rough estimation)
+      const totalTokens = Math.ceil(
+        (userPrompt.length + (systemPrompt?.length || 0) + content.length) / 4
+      );
+
+      eventBus.emitCallCompleted({
+        eventId,
+        duration,
+        timestamp: Date.now(),
+        content: content || 'Tool calls executed',
+        tokensUsed: totalTokens,
+      });
+
+      return {
+        content,
+        toolCalls,
+        totalTokens,
+        eventId,
+      };
+    } catch (error) {
+      eventBus.emitCallError({
+        eventId,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Bind tools to the model for tool calling
    * @param tools - Array of tools to bind
    * @returns A new model instance with tools bound
@@ -212,7 +334,7 @@ export class DeepSeekChatClient extends DeepSeekLangChainClient {
    * @param schema - Zod schema defining the output structure
    * @returns A function that invokes the model and returns structured output
    */
-  withStructuredOutput<T extends z.ZodTypeUnknown>(
+  withStructuredOutput<T extends z.ZodTypeAny>(
     schema: T
   ): {
     invoke: (prompt: string, systemPrompt?: string) => Promise<z.infer<T>>;

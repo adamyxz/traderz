@@ -79,29 +79,28 @@ export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps
       className="group relative overflow-hidden rounded-xl p-3 transition-all hover:scale-[1.02] hover:shadow-xl"
       style={{ backgroundColor: '#2D2D2D' }}
     >
-      {/* Top Bar: Name and Status */}
+      {/* Top Bar: Name and Actions */}
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0 pr-2">
           <h3 className="text-sm font-bold text-white truncate">{trader.name}</h3>
         </div>
 
-        {/* Status Indicators */}
-        <div className="flex flex-col gap-1 items-end shrink-0">
-          {/* Active Status */}
-          <div
-            className={`flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-              isActive ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'
-            }`}
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onEdit}
+            className="flex h-6 w-6 items-center justify-center rounded bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 transition-colors"
+            title="Edit"
           >
-            <Activity className="h-2.5 w-2.5" />
-            <span className="leading-none">{isActive ? 'ON' : 'OFF'}</span>
-          </div>
-          {/* Trader Status */}
-          <span
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${status.bgColor} ${status.textColor}`}
+            <Edit className="h-3 w-3" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            title="Delete"
           >
-            {status.label}
-          </span>
+            <Trash2 className="h-3 w-3" />
+          </button>
         </div>
       </div>
 
@@ -175,31 +174,39 @@ export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps
         <span className="text-[9px] text-gray-500">UTC</span>
       </div>
 
-      {/* Footer - Actions */}
+      {/* Footer - Status Indicators */}
       <div className="flex items-center justify-between border-t border-gray-700/50 pt-2 mt-2">
+        <div className="flex items-center gap-1.5">
+          {/* Active Status */}
+          <div
+            className={`flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+              isActive ? 'bg-green-500/20 text-green-400' : 'bg-gray-600/30 text-gray-400'
+            }`}
+          >
+            <Activity className="h-2.5 w-2.5" />
+            <span className="leading-none">{isActive ? 'ON' : 'OFF'}</span>
+          </div>
+          {/* Trader Status */}
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${status.bgColor} ${status.textColor}`}
+          >
+            {status.label}
+          </span>
+        </div>
         <span className="text-[9px] text-gray-500">
           {new Date(trader.createdAt).toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
           })}
         </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onEdit}
-            className="flex h-6 w-6 items-center justify-center rounded bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 transition-colors"
-            title="Edit"
-          >
-            <Edit className="h-3 w-3" />
-          </button>
-          <button
-            onClick={onDelete}
-            className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-            title="Delete"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </div>
       </div>
+
+      {/* Description Tooltip on Hover */}
+      {trader.description && (
+        <div className="absolute inset-x-0 bottom-0 z-10 max-h-0 overflow-hidden rounded-b-xl bg-gray-900/95 backdrop-blur-sm transition-all duration-300 group-hover:max-h-24 group-hover:py-2">
+          <p className="px-3 text-[10px] text-gray-300 line-clamp-3">{trader.description}</p>
+        </div>
+      )}
 
       {/* Hover Effect Gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 to-blue-500/5 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />

@@ -165,8 +165,8 @@ export function useDeepSeekEvents(autoConnect = true): UseDeepSeekEventsResult {
 
               console.log('[Hook] Updating event:', {
                 existingLength: existingContent.length,
-                newChunkLength: event.content.length,
-                totalLength: existingContent.length + event.content.length,
+                newChunkLength: event.content?.length || 0,
+                totalLength: existingContent.length + (event.content?.length || 0),
               });
 
               updated[index] = {

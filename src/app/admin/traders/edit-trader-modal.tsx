@@ -7,11 +7,42 @@ import type { Trader } from '@/db/schema';
 interface EditTraderModalProps {
   trader: Trader;
   onClose: () => void;
-  onUpdate: (trader: Trader) => void;
+  onUpdate?: (trader: Trader) => void;
 }
 
 export default function EditTraderModal({ trader, onClose, onUpdate }: EditTraderModalProps) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    // 基础信息
+    name: string;
+    description: string;
+    status: 'enabled' | 'paused' | 'disabled';
+
+    // 交易参数
+    aggressivenessLevel: number;
+    maxLeverage: number;
+    minLeverage: number;
+    maxPositions: number;
+    maxPositionSize: number;
+    minTradeAmount: number;
+    positionStrategy: 'none' | 'martingale' | 'pyramid';
+    allowShort: boolean;
+
+    // 风险控制
+    maxDrawdown: number;
+    stopLossThreshold: number;
+    positionStopLoss: number;
+    positionTakeProfit: number;
+    maxConsecutiveLosses: number;
+    dailyMaxLoss: number;
+    riskPreferenceScore: number;
+
+    // 交易行为
+    heartbeatInterval: number;
+    activeTimeStart: string;
+    activeTimeEnd: string;
+    tradingStrategy: 'trend' | 'oscillation' | 'arbitrage' | 'market_making' | 'scalping' | 'swing';
+    holdingPeriod: 'intraday' | 'short_term' | 'medium_term' | 'long_term';
+  }>({
     // 基础信息
     name: trader.name,
     description: trader.description || '',
@@ -76,7 +107,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
       dailyMaxLoss: String(formData.dailyMaxLoss),
     };
 
-    onUpdate({ ...trader, ...traderData });
+    onUpdate?.({ ...trader, ...traderData });
   };
 
   return (
@@ -107,7 +138,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
               <div className="h-0.5 w-4 rounded-full bg-sky-500"></div>
               Basic Info
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-300">
                   Name <span className="text-red-400">*</span>
@@ -124,17 +155,40 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                 {errors.name && <p className="mt-1 text-xs text-red-400">{errors.name}</p>}
               </div>
               <div>
+                <label className="mb-1 block text-xs font-medium text-gray-300">Description</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 resize-none"
+                  placeholder="Enter trader description"
+                  rows={2}
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-xs font-medium text-gray-300">Status</label>
                 <select
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      status: e.target.value as
-                        | Trader['status']
-                        | Trader['tradingStrategy']
-                        | Trader['holdingPeriod']
-                        | Trader['positionStrategy'],
+                      status: e.target.value as 'enabled' | 'paused' | 'disabled',
+                    })
+                  }
+                  className="w-full appearance-none rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                >
+                  <option value="enabled">Enabled</option>
+                  <option value="paused">Paused</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-300">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      status: e.target.value as 'enabled' | 'paused' | 'disabled',
                     })
                   }
                   className="w-full appearance-none rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -164,10 +218,12 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                     setFormData({
                       ...formData,
                       tradingStrategy: e.target.value as
-                        | Trader['status']
-                        | Trader['tradingStrategy']
-                        | Trader['holdingPeriod']
-                        | Trader['positionStrategy'],
+                        | 'trend'
+                        | 'oscillation'
+                        | 'arbitrage'
+                        | 'market_making'
+                        | 'scalping'
+                        | 'swing',
                     })
                   }
                   className="w-full appearance-none rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -190,10 +246,10 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                     setFormData({
                       ...formData,
                       holdingPeriod: e.target.value as
-                        | Trader['status']
-                        | Trader['tradingStrategy']
-                        | Trader['holdingPeriod']
-                        | Trader['positionStrategy'],
+                        | 'intraday'
+                        | 'short_term'
+                        | 'medium_term'
+                        | 'long_term',
                     })
                   }
                   className="w-full appearance-none rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -213,11 +269,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      positionStrategy: e.target.value as
-                        | Trader['status']
-                        | Trader['tradingStrategy']
-                        | Trader['holdingPeriod']
-                        | Trader['positionStrategy'],
+                      positionStrategy: e.target.value as 'none' | 'martingale' | 'pyramid',
                     })
                   }
                   className="w-full appearance-none rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"

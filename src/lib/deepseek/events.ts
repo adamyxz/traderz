@@ -11,6 +11,8 @@ import type {
   DeepSeekEventChunk,
   DeepSeekEventCompletion,
   DeepSeekEventError,
+  ModelType,
+  CallType,
 } from './monitor-types';
 
 /**
@@ -106,6 +108,7 @@ class DeepSeekEventBus extends EventEmitter {
       content?: string;
       modelType?: string;
       callType?: string;
+      metadata?: Record<string, unknown>;
     }
   ): void {
     // Get the original event from buffer to preserve context
@@ -125,6 +128,7 @@ class DeepSeekEventBus extends EventEmitter {
       metadata: {
         duration: completion.duration,
         tokensUsed: completion.tokensUsed,
+        ...completion.metadata,
       },
     };
 

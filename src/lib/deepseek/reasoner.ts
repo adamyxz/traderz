@@ -184,17 +184,21 @@ export class DeepSeekReasonerClient extends DeepSeekLangChainClient {
    */
   private extractReasoning(response: unknown): string {
     // Check additional_kwargs for reasoning_content
-    if (response?.additional_kwargs?.reasoning_content) {
-      return response.additional_kwargs.reasoning_content;
+    const resp = response as Record<string, unknown>;
+    if (resp?.additional_kwargs && typeof resp.additional_kwargs === 'object') {
+      const kwargs = resp.additional_kwargs as Record<string, unknown>;
+      if (kwargs.reasoning_content && typeof kwargs.reasoning_content === 'string') {
+        return kwargs.reasoning_content;
+      }
     }
 
     // Check if response itself has reasoning_content
-    if (response?.reasoning_content) {
-      return response.reasoning_content;
+    if (resp?.reasoning_content && typeof resp.reasoning_content === 'string') {
+      return resp.reasoning_content;
     }
 
     // Try to extract from content if it's a structured response
-    const content = response?.content;
+    const content = resp?.content;
     if (typeof content === 'string') {
       return content;
     }
@@ -207,7 +211,8 @@ export class DeepSeekReasonerClient extends DeepSeekLangChainClient {
    */
   private extractAnswer(response: unknown): string {
     // Main content is usually the answer
-    const content = response?.content;
+    const resp = response as Record<string, unknown>;
+    const content = resp?.content;
 
     if (typeof content === 'string') {
       return content;

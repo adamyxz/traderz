@@ -3,9 +3,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
-import { Plus, Search, SortAsc, ChevronDown, X } from 'lucide-react';
+import { Plus, Search, SortAsc, ChevronDown, X, Sparkles } from 'lucide-react';
 import CreateTraderModal from './create-trader-modal';
 import EditTraderModal from './edit-trader-modal';
+import AiGenerateModal from './ai-generate-modal';
 import TraderCard from './trader-card';
 import type { Trader } from '@/db/schema';
 
@@ -46,15 +47,28 @@ export default function TradersAdminPage() {
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(6);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAiGenerateModalOpen, setIsAiGenerateModalOpen] = useState(false);
   const [editingTrader, setEditingTrader] = useState<Trader | null>(null);
   const [deletingTraderId, setDeletingTraderId] = useState<number | null>(null);
 
   // Fetch traders from API
   useEffect(() => {
     fetchTraders();
+
+    // Cleanup function to clear refresh interval
+    return () => {
+      const interval = (
+        window as Window & { traderRefreshInterval?: ReturnType<typeof setInterval> }
+      ).traderRefreshInterval;
+      if (interval) {
+        clearInterval(interval);
+        delete (window as Window & { traderRefreshInterval?: ReturnType<typeof setInterval> })
+          .traderRefreshInterval;
+      }
+    };
   }, []);
 
   const fetchTraders = async () => {
@@ -199,17 +213,23 @@ export default function TradersAdminPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold text-white">Trader Management</h1>
-                <p className="mt-2 text-gray-400">
-                  Manage your trader configurations and strategies
-                </p>
               </div>
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 px-6 py-3 text-white font-medium hover:from-sky-600 hover:to-blue-700 transition-all shadow-lg shadow-sky-500/30"
-              >
-                <Plus className="h-5 w-5" />
-                Add Trader
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsAiGenerateModalOpen(true)}
+                  className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg shadow-purple-500/30"
+                >
+                  <Sparkles className="h-5 w-5" />
+                  AI+
+                </button>
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 px-6 py-3 text-white font-medium hover:from-sky-600 hover:to-blue-700 transition-all shadow-lg shadow-sky-500/30"
+                >
+                  <Plus className="h-5 w-5" />
+                  Add Trader
+                </button>
+              </div>
             </div>
           </div>
 
@@ -299,9 +319,9 @@ export default function TradersAdminPage() {
                   }}
                   className="appearance-none rounded-lg bg-gray-700/50 px-4 py-3 pr-10 text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                 >
-                  <option value="6">6 / page</option>
                   <option value="12">12 / page</option>
-                  <option value="24">24 / page</option>
+                  <option value="20">20 / page</option>
+                  <option value="48">48 / page</option>
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 pointer-events-none" />
               </div>
@@ -429,6 +449,38 @@ export default function TradersAdminPage() {
             isOpen={isCreateModalOpen}
             onClose={() => setIsCreateModalOpen(false)}
             onCreate={handleCreateTrader}
+          />
+
+          {/* AI Generate Modal */}
+          <AiGenerateModal
+            isOpen={isAiGenerateModalOpen}
+            onClose={() => {
+              setIsAiGenerateModalOpen(false);
+              // Refresh traders when closing
+              fetchTraders();
+            }}
+            onStart={(count) => {
+              console.log(`Started generating ${count} traders`);
+
+              // Auto-refresh every 5 seconds for up to 2 minutes
+              let refreshCount = 0;
+              const maxRefreshes = 24; // 24 * 5 = 120 seconds
+
+              const refreshInterval = setInterval(() => {
+                fetchTraders();
+                refreshCount++;
+
+                if (refreshCount >= maxRefreshes) {
+                  clearInterval(refreshInterval);
+                  console.log('Stopped auto-refresh after 2 minutes');
+                }
+              }, 5000);
+
+              // Save interval ID to clear it if needed
+              (
+                window as Window & { traderRefreshInterval?: ReturnType<typeof setInterval> }
+              ).traderRefreshInterval = refreshInterval;
+            }}
           />
 
           {/* Edit Modal */}

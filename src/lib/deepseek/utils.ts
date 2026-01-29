@@ -200,7 +200,7 @@ export function withRetry<T extends (...args: unknown[]) => Promise<unknown>>(
 
     for (let i = 0; i <= maxRetries; i++) {
       try {
-        return await fn(...args);
+        return (await fn(...args)) as ReturnType<T>;
       } catch (error) {
         lastError = error as Error;
 

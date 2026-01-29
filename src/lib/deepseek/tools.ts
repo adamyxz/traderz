@@ -193,9 +193,79 @@ export const RiskAssessmentSchema = z.object({
 export type RiskAssessment = z.infer<typeof RiskAssessmentSchema>;
 
 /**
+ * Create trader tool
+ * Creates a new trader with specified configuration
+ */
+export const createTraderTool = tool(
+  async (args) => {
+    // This tool returns the configuration for validation
+    // The actual creation will be handled by the API
+    return JSON.stringify(
+      {
+        success: true,
+        message: 'Trader configuration validated successfully',
+        traderConfig: args,
+      },
+      null,
+      2
+    );
+  },
+  {
+    name: 'create_trader',
+    description:
+      'Create a new cryptocurrency trader with specific trading strategy, risk parameters, and behavior settings. Use this tool when you have designed a complete trader configuration.',
+    schema: z.object({
+      name: z.string().describe('Unique name for the trader'),
+      description: z.string().describe('Detailed description of the trader strategy and focus'),
+      tradingStrategy: z
+        .enum(['trend', 'oscillation', 'arbitrage', 'market_making', 'scalping', 'swing'])
+        .describe('Trading strategy type'),
+      holdingPeriod: z
+        .enum(['intraday', 'short_term', 'medium_term', 'long_term'])
+        .describe('Preferred holding period'),
+      positionStrategy: z
+        .enum(['none', 'martingale', 'pyramid'])
+        .describe('Position sizing strategy'),
+      aggressivenessLevel: z.number().min(1).max(10).describe('Aggressiveness level (1-10)'),
+      maxLeverage: z.number().min(1).max(125).describe('Maximum leverage multiplier'),
+      minLeverage: z.number().min(1).max(125).describe('Minimum leverage multiplier'),
+      maxPositions: z.number().min(1).max(20).describe('Maximum number of concurrent positions'),
+      maxPositionSize: z.number().min(10).describe('Maximum position size in USD'),
+      minTradeAmount: z.number().min(1).describe('Minimum trade amount in USD'),
+      allowShort: z.boolean().describe('Whether short selling is allowed'),
+      maxDrawdown: z.number().min(1).max(100).describe('Maximum acceptable drawdown percentage'),
+      stopLossThreshold: z.number().min(1).max(100).describe('Stop loss threshold percentage'),
+      positionStopLoss: z.number().min(0.1).max(50).describe('Position stop loss percentage'),
+      positionTakeProfit: z.number().min(0.1).max(100).describe('Position take profit percentage'),
+      maxConsecutiveLosses: z
+        .number()
+        .min(1)
+        .max(20)
+        .describe('Maximum consecutive losses before pause'),
+      dailyMaxLoss: z.number().min(1).describe('Maximum daily loss in USD'),
+      riskPreferenceScore: z.number().min(1).max(10).describe('Risk preference score (1-10)'),
+      heartbeatInterval: z.number().min(1).max(300).describe('Heartbeat interval in seconds'),
+      activeTimeStart: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .describe('Active time start (HH:mm)'),
+      activeTimeEnd: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .describe('Active time end (HH:mm)'),
+    }),
+  }
+);
+
+/**
  * Export all tools as an array for easy binding
  */
-export const defaultTools = [getTraderInfoTool, analyzeRiskTool, getMarketDataTool];
+export const defaultTools = [
+  getTraderInfoTool,
+  analyzeRiskTool,
+  getMarketDataTool,
+  createTraderTool,
+];
 
 /**
  * Tool categories for organized access
@@ -210,7 +280,7 @@ export const toolCategories = {
 /**
  * Helper function to create a custom tool
  */
-export function createCustomTool<T extends z.ZodTypeUnknown>(
+export function createCustomTool<T extends z.ZodTypeAny>(
   name: string,
   description: string,
   schema: T,
@@ -233,7 +303,7 @@ export function getSchemaJson<T extends z.ZodType>(schema: T): T {
 /**
  * Helper to validate data against a schema
  */
-export function validateAgainstSchema<T extends z.ZodTypeUnknown>(
+export function validateAgainstSchema<T extends z.ZodTypeAny>(
   schema: T,
   data: unknown
 ): z.infer<T> {
@@ -243,7 +313,7 @@ export function validateAgainstSchema<T extends z.ZodTypeUnknown>(
 /**
  * Helper to safely parse data against a schema
  */
-export function safeValidateAgainstSchema<T extends z.ZodTypeUnknown>(
+export function safeValidateAgainstSchema<T extends z.ZodTypeAny>(
   schema: T,
   data: unknown
 ): { success: true; data: z.infer<T> } | { success: false; error: z.ZodError } {
