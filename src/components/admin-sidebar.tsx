@@ -2,9 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Users } from 'lucide-react';
+import { Users, TrendingUp } from 'lucide-react';
 
-const navigation = [{ name: 'Trader Management', href: '/admin/traders', icon: Users }];
+const navigation = [
+  { name: 'Trader Management', href: '/admin/traders', icon: Users },
+  { name: 'Trading View', href: '/admin/trading', icon: TrendingUp },
+];
 
 export default function AdminSidebar() {
   const pathname = usePathname();

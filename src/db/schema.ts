@@ -71,3 +71,30 @@ export const traders = pgTable('traders', {
 
 export type Trader = typeof traders.$inferSelect;
 export type NewTrader = typeof traders.$inferInsert;
+
+// 交易对表
+export const tradingPairs = pgTable('trading_pairs', {
+  id: serial('id').primaryKey(),
+  symbol: text('symbol').notNull().unique(), // 如 'BTCUSDT'
+  baseAsset: text('base_asset').notNull(), // 'BTC'
+  quoteAsset: text('quote_asset').notNull(), // 'USDT'
+  status: text('status').default('active').notNull(), // 'active', 'inactive'
+  contractType: text('contract_type').default('perpetual').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// K线周期表
+export const klineIntervals = pgTable('kline_intervals', {
+  id: serial('id').primaryKey(),
+  code: text('code').notNull().unique(), // '1m', '5m', '1h', '1d'
+  label: text('label').notNull(), // '1分钟', '5分钟', '1小时', '1天'
+  seconds: integer('seconds').notNull(), // 60, 300, 3600, 86400
+  displayOrder: integer('display_order').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export type TradingPair = typeof tradingPairs.$inferSelect;
+export type NewTradingPair = typeof tradingPairs.$inferInsert;
+export type KlineInterval = typeof klineIntervals.$inferSelect;
+export type NewKlineInterval = typeof klineIntervals.$inferInsert;
