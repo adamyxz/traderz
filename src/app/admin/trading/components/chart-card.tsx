@@ -1,6 +1,6 @@
 'use client';
 
-import { Maximize2, X, Play, Pause } from 'lucide-react';
+import { Maximize2, X } from 'lucide-react';
 import TradingChart from './trading-chart';
 import type {
   ChartConfig,
@@ -38,10 +38,6 @@ export default function ChartCard({
     onConfigChange(config.id, { interval });
   };
 
-  const handleToggleRunning = () => {
-    onConfigChange(config.id, { isRunning: !config.isRunning });
-  };
-
   const handleStatusChange = (newStatus: ConnectionStatus) => {
     onConfigChange(config.id, { connectionStatus: newStatus });
   };
@@ -73,7 +69,7 @@ export default function ChartCard({
           <select
             value={config.symbol}
             onChange={(e) => handleSymbolChange(e.target.value)}
-            disabled={config.isRunning}
+            disabled
             className="
               rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white
               focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50
@@ -90,7 +86,7 @@ export default function ChartCard({
           <select
             value={config.interval}
             onChange={(e) => handleIntervalChange(e.target.value)}
-            disabled={config.isRunning}
+            disabled
             className="
               rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white
               focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50
@@ -125,22 +121,6 @@ export default function ChartCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Start/Stop Button */}
-          <button
-            onClick={handleToggleRunning}
-            className={`
-              flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors
-              ${
-                config.isRunning
-                  ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                  : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-              }
-            `}
-            title={config.isRunning ? '停止' : '启动'}
-          >
-            {config.isRunning ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-          </button>
-
           {/* Fullscreen Button */}
           <button
             onClick={handleFullscreen}
@@ -164,7 +144,7 @@ export default function ChartCard({
       </div>
 
       {/* Chart Container */}
-      <div className="flex-1 min-h-[400px]">
+      <div className="flex-1 min-h-[200px]">
         <TradingChart
           symbol={config.symbol}
           interval={config.interval}

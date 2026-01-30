@@ -55,7 +55,21 @@ export function buildMicroDecisionUserPrompt(args: {
 
   prompt += `**Market Data from Readers:**\n\n`;
   readerData.forEach(({ readerName, data }) => {
-    prompt += `### ${readerName}\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\n`;
+    // Check if data has format information
+    if (data && typeof data === 'object' && 'fmt' in data) {
+      const fmt = (data as { fmt: string }).fmt;
+      if (fmt === 'csv') {
+        // CSV format - display as-is
+        const csvData = (data as { d: string }).d;
+        prompt += `### ${readerName} (CSV format)\n\`\`\`\n${csvData}\n\`\`\`\n\n`;
+      } else {
+        // JSON format
+        prompt += `### ${readerName}\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\n`;
+      }
+    } else {
+      // No format specified, default to JSON
+      prompt += `### ${readerName}\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\n`;
+    }
   });
 
   return prompt;

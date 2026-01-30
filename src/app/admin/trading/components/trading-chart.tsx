@@ -238,7 +238,7 @@ export default function TradingChart({
     setWsError(null);
 
     const wsSymbol = symbol.toLowerCase();
-    const wsUrl = `wss://fstream.binance.com/ws/${wsSymbol}@kline_${interval}`;
+    const wsUrl = `wss://fstream.binance.com/ws/${wsSymbol}_perpetual@continuousKline_${interval}`;
     const ws = new WebSocket(wsUrl) as ExtendedWebSocket;
 
     wsRef.current = ws;

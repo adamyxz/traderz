@@ -110,6 +110,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .where(eq(readers.id, Number(id)))
       .returning();
 
+    // Update parameter default values if provided
+    if (body.parameters && Array.isArray(body.parameters)) {
+      for (const param of body.parameters) {
+        if (param.id !== undefined && param.defaultValue !== undefined) {
+          await db
+            .update(readerParameters)
+            .set({ defaultValue: param.defaultValue })
+            .where(eq(readerParameters.id, param.id));
+        }
+      }
+    }
+
     // 获取更新后的参数
     const parameters = await db
       .select()

@@ -216,9 +216,9 @@ export default function CreateTraderModal({ isOpen, onClose, onCreate }: CreateT
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div
-        className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-thin rounded-xl p-5"
+        className="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-thin rounded-xl p-5 shadow-2xl"
         style={{ backgroundColor: '#2D2D2D' }}
       >
         {/* Close Button */}

@@ -42,6 +42,8 @@ interface TraderWithRelations extends Trader {
   preferredTradingPair?: TradingPair;
   preferredKlineIntervals?: KlineInterval[];
   readers?: Reader[];
+  totalReturnRate?: number;
+  totalPnl?: number;
 }
 
 type SortField =
@@ -640,9 +642,9 @@ export default function TradersAdminPage() {
 
           {/* Delete Confirmation Modal */}
           {deletingTraderId && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
               <div
-                className="w-full max-w-md rounded-2xl p-8"
+                className="relative z-10 w-full max-w-md rounded-2xl p-8 shadow-2xl"
                 style={{ backgroundColor: '#2D2D2D' }}
               >
                 <h3 className="text-2xl font-bold text-white mb-4">Confirm Deletion</h3>

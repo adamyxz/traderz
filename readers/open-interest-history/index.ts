@@ -1,29 +1,25 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { toTOONTable } from '@/lib/toon';
+import { toRelativeTimestamps, trimPrice } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
 // 输入验证
+const periodEnum = z.enum(['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d']);
+
 const InputSchema = z.object({
   symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, {
     message: '交易对格式错误，应为 BTCUSDT 格式',
   }),
-  limit: z.number().int().min(1).max(1000).default(500),
-  startTime: z.number().int().min(0).default(0),
+  period: periodEnum,
+  limit: z.number().int().min(1).max(500).default(100),
   endTime: z.number().int().min(0).default(0),
-  fromId: z.number().int().min(0).default(0),
 });
 
-// 聚合成交数据类型
-interface AggTrade {
-  a: number; // 聚合交易ID (aggTradeId)
-  p: string; // 成交价格 (price)
-  q: string; // 成交数量 (quantity)
-  f: number; // 第一个交易ID (firstTradeId)
-  l: number; // 最后一个交易ID (lastTradeId)
-  T: number; // 成交时间戳 (timestamp)
-  m: boolean; // 是否为买方做市商 (isBuyerMaker)
-  M: boolean; // 是否被忽略 (wasIgnored)
+// 简化的持仓量数据类型
+interface SimplifiedOpenInterest {
+  T: number; // timestamp
+  oi: string; // openInterest (sum of open interest)
+  oiv: string; // openInterestValue (sum of open interest value in USDT)
 }
 
 // 执行函数
@@ -33,26 +29,19 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
   try {
     // 验证输入
-    const { symbol, limit, startTime: startTimeParam, endTime, fromId } = InputSchema.parse(input);
+    const { symbol, period, limit, endTime } = InputSchema.parse(input);
 
-    console.log(`[Reader] Fetching aggTrades for ${symbol}, limit: ${limit}`);
+    console.log(`[Reader] Fetching open interest history for ${symbol} ${period}, limit: ${limit}`);
 
-    // 构建币安API请求
-    const baseUrl = 'https://api.binance.com/api/v3/aggTrades';
+    // 构建币安永续合约API请求
+    const baseUrl = 'https://fapi.binance.com/futures/data/openInterestHist';
     const params = new URLSearchParams({
       symbol: symbol.toUpperCase(),
+      period,
       limit: limit.toString(),
     });
 
-    // 添加可选参数
-    if (fromId > 0) {
-      params.append('fromId', fromId.toString());
-    }
-
-    if (startTimeParam > 0) {
-      params.append('startTime', startTimeParam.toString());
-    }
-
+    // 如果指定了结束时间，添加到参数中
     if (endTime > 0) {
       params.append('endTime', endTime.toString());
     }
@@ -74,46 +63,40 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     const rawData = await response.json();
 
-    // 解析聚合成交数据为紧凑格式
-    // 币安返回格式: { a: aggTradeId, p: price, q: quantity, f: firstTradeId, l: lastTradeId, T: timestamp, m: isBuyerMaker, M: wasIgnored }
-    const aggTrades: AggTrade[] = rawData.map(
-      (tick: {
-        a: number;
-        p: string;
-        q: string;
-        f: number;
-        l: number;
-        T: number;
-        m: boolean;
-        M?: boolean;
-      }) => ({
-        a: tick.a,
-        p: tick.p,
-        q: tick.q,
-        f: tick.f,
-        l: tick.l,
-        T: tick.T,
-        m: tick.m,
-        M: tick.M || false,
-      })
+    // 解析持仓量数据
+    // 币安返回格式: 对象数组
+    // [{"symbol":"BTCUSDT","sumOpenInterest":"102398.47","sumOpenInterestValue":"8495950520.42","timestamp":1769793600000}, ...]
+    if (!rawData || !Array.isArray(rawData) || rawData.length === 0) {
+      throw new Error('API返回数据为空或格式错误');
+    }
+
+    const data: SimplifiedOpenInterest[] = rawData.map((tick: Record<string, string>) => ({
+      T: Number(tick.timestamp),
+      oi: trimPrice(String(tick.sumOpenInterest)),
+      oiv: trimPrice(String(tick.sumOpenInterestValue)),
+    }));
+
+    // 应用优化方案：相对时间戳
+    const { baseTime, records: optimizedData } = toRelativeTimestamps(
+      data as unknown as Record<string, unknown>[],
+      'T'
     );
 
-    // 使用 TOON 格式输出 (压缩上下文)
-    const toonData = toTOONTable(aggTrades as unknown as Record<string, unknown>[], [
-      'a',
-      'T',
-      'p',
-      'q',
-      'f',
-      'l',
-      'm',
-      'M',
-    ]);
+    // 构建CSV
+    const keys = optimizedData.length > 0 ? Object.keys(optimizedData[0]) : ['dT', 'oi', 'oiv'];
+    const csvHeader = keys.join(',');
+    const csvRows = optimizedData.map((row: Record<string, unknown>) => {
+      return keys.map((k) => row[k]).join(',');
+    });
+    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
 
     const result = {
       s: symbol,
-      d: toonData,
-      cnt: aggTrades.length,
+      p: period,
+      fmt: 'csv',
+      bT: baseTime, // base timestamp for relative times
+      d: csvData,
+      cnt: data.length,
       fa: new Date().toISOString(),
     };
 

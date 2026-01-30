@@ -7,6 +7,7 @@ import { calculateMargin, calculateQuantity } from '@/lib/trading/margin-calcula
 import { calculateOpenFee } from '@/lib/trading/fee-calculator';
 import { calculateLiquidationPrice } from '@/lib/trading/liquidation-calculator';
 import type { CreatePositionRequest } from '@/lib/trading/position-types';
+import { getPositionEventDispatcher } from '@/lib/trading/position-events';
 
 /**
  * GET /api/positions
@@ -244,6 +245,14 @@ export async function POST(request: NextRequest) {
         liquidationPrice,
       }),
       createdAt: new Date(),
+    });
+
+    // Emit position opened event for SSE
+    getPositionEventDispatcher().emitPositionOpened({
+      positionId: newPosition.id,
+      traderId: newPosition.traderId,
+      tradingPairId: newPosition.tradingPairId,
+      tradingPairSymbol: tradingPair.symbol,
     });
 
     return NextResponse.json({

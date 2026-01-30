@@ -5,9 +5,9 @@ import { usePathname } from 'next/navigation';
 import { Users, TrendingUp, Code2, Briefcase } from 'lucide-react';
 
 const navigation = [
+  { name: 'Trading View', href: '/admin/trading', icon: TrendingUp },
   { name: 'Trader Management', href: '/admin/traders', icon: Users },
   { name: 'Position Management', href: '/admin/positions', icon: Briefcase },
-  { name: 'Trading View', href: '/admin/trading', icon: TrendingUp },
   { name: 'Readers', href: '/admin/readers', icon: Code2 },
 ];
 

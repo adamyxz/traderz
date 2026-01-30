@@ -7,7 +7,7 @@ export async function getKlines(
   interval: string,
   limit: number = 500
 ): Promise<KlineData[]> {
-  const url = `${BINANCE_FUTURES_BASE_URL}/fapi/v1/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
+  const url = `${BINANCE_FUTURES_BASE_URL}/fapi/v1/continuousKlines?pair=${symbol.toUpperCase()}&contractType=PERPETUAL&interval=${interval}&limit=${limit}`;
 
   const response = await fetch(url);
 
@@ -54,18 +54,18 @@ export async function getExchangeInfo(): Promise<BinanceTradingPair[]> {
 
   const data = await response.json();
 
-  // Extract USDT-margined trading pairs
+  // Extract USDT-margined perpetual pairs only
   const pairs: BinanceTradingPair[] = data.symbols
     .filter(
-      (s: { quoteAsset: string; status: string }) =>
-        s.quoteAsset === 'USDT' && s.status === 'TRADING'
+      (s: { quoteAsset: string; status: string; contractType: string }) =>
+        s.quoteAsset === 'USDT' && s.status === 'TRADING' && s.contractType === 'PERPETUAL'
     )
-    .map((s: { symbol: string; baseAsset: string; quoteAsset: string; contractType?: string }) => ({
+    .map((s: { symbol: string; baseAsset: string; quoteAsset: string; contractType: string }) => ({
       symbol: s.symbol,
       baseAsset: s.baseAsset,
       quoteAsset: s.quoteAsset,
       status: 'active',
-      contractType: s.contractType || 'perpetual',
+      contractType: 'perpetual',
     }));
 
   return pairs;

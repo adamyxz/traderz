@@ -1,0 +1,29 @@
+{
+  "name": "funding-rate",
+  "description": "从币安获取合约资金费率历史记录，包含资金费率、时间和标记价格",
+  "parameters": [
+    {
+      "name": "symbol",
+      "type": "string",
+      "displayName": "交易对",
+      "description": "可选，币安合约交易对符号，如 BTCUSDT。不填则返回所有交易对的历史记录",
+      "required": false,
+      "defaultValue": "",
+      "validation": {
+        "pattern": "^$|^[A-Z]{2,20}USDT$"
+      }
+    },
+    {
+      "name": "limit",
+      "type": "number",
+      "displayName": "返回数量",
+      "description": "返回的记录数量，默认100，最大1000",
+      "required": false,
+      "defaultValue": 100,
+      "validation": {
+        "min": 1,
+        "max": 1000
+      }
+    }
+  ]
+}

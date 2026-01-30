@@ -7,6 +7,7 @@ import {
   traderKlineIntervals,
   readers,
   traderReaders,
+  positions,
   type Trader,
 } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -16,6 +17,8 @@ export interface TraderWithRelations extends Trader {
   preferredTradingPair?: typeof tradingPairs.$inferSelect;
   preferredKlineIntervals?: (typeof klineIntervals.$inferSelect)[];
   readers?: (typeof readers.$inferSelect)[];
+  totalReturnRate?: number; // 总收益率（百分比）
+  totalPnl?: number; // 总盈亏金额
 }
 
 // GET /api/traders - 获取所有交易员（包含关联数据）
@@ -31,34 +34,62 @@ export async function GET() {
     const allIntervalRelations = await db.select().from(traderKlineIntervals);
     const allReaderRelations = await db.select().from(traderReaders);
 
-    // 为每个trader添加关联数据
-    const tradersWithRelations: TraderWithRelations[] = await Promise.all(
-      allTraders.map(async (trader) => {
-        // 查找偏好的交易对
-        const preferredPair = trader.preferredTradingPairId
-          ? allPairs.find((p) => p.id === trader.preferredTradingPairId)
-          : undefined;
-
-        // 查找偏好的K线周期
-        const intervalIds = allIntervalRelations
-          .filter((r) => r.traderId === trader.id)
-          .map((r) => r.klineIntervalId);
-        const preferredIntervals = allIntervals.filter((i) => intervalIds.includes(i.id));
-
-        // 查找关联的Readers
-        const readerIds = allReaderRelations
-          .filter((r) => r.traderId === trader.id)
-          .map((r) => r.readerId);
-        const traderReaders = allReaders.filter((r) => readerIds.includes(r.id));
-
-        return {
-          ...trader,
-          preferredTradingPair: preferredPair,
-          preferredKlineIntervals: preferredIntervals,
-          readers: traderReaders,
-        };
+    // 获取所有已平仓的仓位来计算总收益率
+    const closedPositions = await db
+      .select({
+        traderId: positions.traderId,
+        realizedPnl: positions.realizedPnl,
+        positionSize: positions.positionSize,
       })
-    );
+      .from(positions)
+      .where(eq(positions.status, 'closed'));
+
+    // 为每个trader计算收益率
+    const traderPnlMap = new Map<number, { totalPnl: number; totalInvested: number }>();
+    for (const pos of closedPositions) {
+      const current = traderPnlMap.get(pos.traderId) || { totalPnl: 0, totalInvested: 0 };
+      const pnl = Number(pos.realizedPnl);
+      const invested = Number(pos.positionSize);
+      traderPnlMap.set(pos.traderId, {
+        totalPnl: current.totalPnl + pnl,
+        totalInvested: current.totalInvested + invested,
+      });
+    }
+
+    // 为每个trader添加关联数据和收益率
+    const tradersWithRelations: TraderWithRelations[] = allTraders.map((trader) => {
+      // 查找偏好的交易对
+      const preferredPair = trader.preferredTradingPairId
+        ? allPairs.find((p) => p.id === trader.preferredTradingPairId)
+        : undefined;
+
+      // 查找偏好的K线周期
+      const intervalIds = allIntervalRelations
+        .filter((r) => r.traderId === trader.id)
+        .map((r) => r.klineIntervalId);
+      const preferredIntervals = allIntervals.filter((i) => intervalIds.includes(i.id));
+
+      // 查找关联的Readers
+      const readerIds = allReaderRelations
+        .filter((r) => r.traderId === trader.id)
+        .map((r) => r.readerId);
+      const traderReaders = allReaders.filter((r) => readerIds.includes(r.id));
+
+      // 计算收益率
+      const pnlData = traderPnlMap.get(trader.id);
+      const totalPnl = pnlData?.totalPnl || 0;
+      const totalInvested = pnlData?.totalInvested || 0;
+      const totalReturnRate = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+
+      return {
+        ...trader,
+        preferredTradingPair: preferredPair,
+        preferredKlineIntervals: preferredIntervals,
+        readers: traderReaders,
+        totalReturnRate,
+        totalPnl,
+      };
+    });
 
     return NextResponse.json(tradersWithRelations);
   } catch (error) {

@@ -1,184 +1,135 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ChartCard from './chart-card';
-import type { ChartConfig, ChartLayout, TradingPair, KlineInterval } from '@/lib/trading/types';
+import AddChartModal from './add-chart-modal';
+import { usePositionEvents } from '@/hooks/use-position-events';
+import type { ChartConfig, TradingPair, KlineInterval } from '@/lib/trading/types';
+import type { PositionEvent } from '@/lib/trading/position-events';
 
 interface MultiChartContainerProps {
   pairs: TradingPair[];
   intervals: KlineInterval[];
   defaultSymbol: string;
   defaultInterval: string;
+  autoUpdateEnabled: boolean;
 }
-
-interface TradingLayoutConfig {
-  layout: ChartLayout;
-  charts: Array<{
-    id: string;
-    symbol: string;
-    interval: string;
-    isRunning: boolean;
-  }>;
-}
-
-const MAX_CHARTS: Record<ChartLayout, number> = {
-  '1x1': 1,
-  '2x1': 2,
-  '1x2': 2,
-  '2x2': 4,
-};
 
 export default function MultiChartContainer({
   pairs,
   intervals,
   defaultSymbol,
   defaultInterval,
+  autoUpdateEnabled,
 }: MultiChartContainerProps) {
-  const [layout, setLayout] = useState<ChartLayout>('1x1');
-  const [charts, setCharts] = useState<ChartConfig[]>([
-    {
-      id: 'chart-1',
-      symbol: defaultSymbol,
-      interval: defaultInterval,
-      isRunning: true,
-      connectionStatus: 'disconnected',
-    },
-  ]);
+  const [charts, setCharts] = useState<ChartConfig[]>([]);
   const [fullscreenChartId, setFullscreenChartId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  // Use ref to track if we're loading initial config to avoid saving during load
-  const isLoadingRef = useRef(true);
-  // Debounce timer for auto-save
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const maxCharts = MAX_CHARTS[layout];
-
-  // Load configuration from database on mount
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const response = await fetch('/api/trading/config');
-        if (response.ok) {
-          const config: TradingLayoutConfig = await response.json();
-
-          // Validate and set layout
-          if (config.layout && MAX_CHARTS[config.layout]) {
-            setLayout(config.layout);
-          }
-
-          // Validate and set charts
-          if (config.charts && Array.isArray(config.charts) && config.charts.length > 0) {
-            const validCharts = config.charts
-              .filter((chart) => chart.symbol && chart.interval)
-              .map((chart) => ({
-                ...chart,
-                connectionStatus: 'disconnected' as const,
-              }));
-
-            if (validCharts.length > 0) {
-              setCharts(validCharts);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error loading trading config:', error);
-      } finally {
-        setIsLoading(false);
-        isLoadingRef.current = false;
-      }
-    };
-
-    loadConfig();
-  }, []);
-
-  // Auto-save configuration to database whenever it changes
-  // Use refs to track current values for the save function
-  const layoutRef = useRef(layout);
-  const chartsRef = useRef(charts);
-
-  // Update refs when values change
-  useEffect(() => {
-    layoutRef.current = layout;
-    chartsRef.current = charts;
-  }, [layout, charts]);
-
-  const saveConfig = useCallback(async () => {
+  // Fetch auto-charts from API
+  const fetchAutoCharts = useCallback(async () => {
     try {
-      const configToSave: TradingLayoutConfig = {
-        layout: layoutRef.current,
-        charts: chartsRef.current.map((chart) => ({
-          id: chart.id,
-          symbol: chart.symbol,
-          interval: chart.interval,
-          isRunning: chart.isRunning,
-        })),
-      };
+      const response = await fetch('/api/trading/auto-charts');
+      if (!response.ok) {
+        console.error('[MultiChartContainer] Failed to fetch auto-charts');
+        return;
+      }
 
-      await fetch('/api/trading/config', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(configToSave),
+      const result = await response.json();
+      if (!result.success) {
+        console.error('[MultiChartContainer] API returned error:', result.error);
+        return;
+      }
+
+      const autoCharts = result.data || [];
+
+      // Create chart configs from auto-charts
+      const newChartConfigs: ChartConfig[] = autoCharts.map(
+        (item: { symbol: string; interval: string; traderId: number; traderName: string }) => ({
+          id: `auto-${item.traderId}-${item.symbol}-${item.interval}`,
+          symbol: item.symbol,
+          interval: item.interval,
+          isRunning: true,
+          connectionStatus: 'disconnected' as const,
+        })
+      );
+
+      // Merge with existing charts, deduplicating by symbol+interval
+      setCharts((prevCharts) => {
+        const existingKeySet = new Set(
+          prevCharts
+            .filter((c) => !c.id.startsWith('auto-'))
+            .map((c) => `${c.symbol}:${c.interval}`)
+        );
+
+        const chartsToAdd = newChartConfigs.filter(
+          (c) => !existingKeySet.has(`${c.symbol}:${c.interval}`)
+        );
+
+        // Remove old auto-charts that are not in the new list
+        const newAutoKeys = new Set(newChartConfigs.map((c) => `${c.symbol}:${c.interval}`));
+        const manualCharts = prevCharts.filter((c) => {
+          if (c.id.startsWith('auto-')) {
+            return newAutoKeys.has(`${c.symbol}:${c.interval}`);
+          }
+          return true;
+        });
+
+        return [...manualCharts, ...chartsToAdd];
       });
     } catch (error) {
-      console.error('Error saving trading config:', error);
+      console.error('[MultiChartContainer] Error fetching auto-charts:', error);
     }
   }, []);
 
-  useEffect(() => {
-    // Don't save during initial load
-    if (isLoadingRef.current) return;
-
-    // Clear any pending save
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    // Debounce save to avoid too frequent updates
-    saveTimeoutRef.current = setTimeout(() => {
-      saveConfig();
-    }, 500);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+  // Handle position change events
+  const handlePositionChange = useCallback(
+    (event: PositionEvent) => {
+      if (autoUpdateEnabled) {
+        console.log('[MultiChartContainer] Position changed, refreshing auto-charts:', event);
+        fetchAutoCharts();
       }
-    };
-  }, [layout, charts, saveConfig]);
+    },
+    [autoUpdateEnabled, fetchAutoCharts]
+  );
 
-  const getGridClass = () => {
-    switch (layout) {
-      case '2x1':
-        return 'grid-cols-2';
-      case '1x2':
-        return 'grid-rows-2';
-      case '2x2':
-        return 'grid-cols-2 grid-rows-2';
-      default:
-        return 'grid-cols-1';
+  // SSE connection for position events
+  usePositionEvents({
+    enabled: autoUpdateEnabled,
+    onPositionChange: handlePositionChange,
+  });
+
+  // Fetch auto-charts when auto-update is enabled
+  useEffect(() => {
+    if (!autoUpdateEnabled) {
+      // When disabled, defer removal of auto-generated charts
+      const timeoutId = setTimeout(() => {
+        setCharts((prev) => prev.filter((c) => !c.id.startsWith('auto-')));
+      }, 0);
+      return () => clearTimeout(timeoutId);
     }
+
+    // When enabled, fetch auto-charts (synchronizes with external API)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchAutoCharts().catch((error) => {
+      console.error('[MultiChartContainer] Error in fetchAutoCharts:', error);
+    });
+  }, [autoUpdateEnabled, fetchAutoCharts]);
+
+  const getGridCols = () => {
+    const count = charts.length;
+    if (count === 1) return 'grid-cols-1';
+    if (count === 2) return 'grid-cols-2';
+    if (count === 3) return 'grid-cols-3';
+    return 'grid-cols-4'; // 4+ charts
   };
 
-  const handleLayoutChange = (newLayout: ChartLayout) => {
-    setLayout(newLayout);
-    const newMax = MAX_CHARTS[newLayout];
-
-    // Trim charts if new layout has fewer slots
-    if (charts.length > newMax) {
-      setCharts((prev) => prev.slice(0, newMax));
-    }
-  };
-
-  const handleAddChart = () => {
-    if (charts.length >= maxCharts) return;
-
+  const handleAddChart = (symbol: string, interval: string) => {
     const newChart: ChartConfig = {
       id: `chart-${Date.now()}`,
-      symbol: defaultSymbol,
-      interval: defaultInterval,
-      isRunning: true,
+      symbol,
+      interval,
+      isRunning: true, // Auto-start connection
       connectionStatus: 'disconnected',
     };
 
@@ -186,7 +137,12 @@ export default function MultiChartContainer({
   };
 
   const handleDeleteChart = (id: string) => {
-    setCharts((prev) => prev.filter((chart) => chart.id !== id));
+    // Stop connection before deleting (will be handled by TradingChart cleanup)
+    setCharts((prev) =>
+      prev
+        .map((chart) => (chart.id === id ? { ...chart, isRunning: false } : chart))
+        .filter((chart) => chart.id !== id)
+    );
     if (fullscreenChartId === id) {
       setFullscreenChartId(null);
     }
@@ -203,18 +159,6 @@ export default function MultiChartContainer({
   const handleExitFullscreen = () => {
     setFullscreenChartId(null);
   };
-
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center rounded-lg bg-gray-800/50 p-12">
-        <div className="flex items-center gap-3 text-white">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
-          <span>加载配置中...</span>
-        </div>
-      </div>
-    );
-  }
 
   // If a chart is in fullscreen mode, only show that chart
   if (fullscreenChartId) {
@@ -240,58 +184,8 @@ export default function MultiChartContainer({
 
   return (
     <div>
-      {/* Layout Controls */}
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-800/50 p-3">
-        {/* Layout Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">布局:</span>
-          <div className="flex gap-1">
-            {(['1x1', '2x1', '1x2', '2x2'] as ChartLayout[]).map((layoutOption) => (
-              <button
-                key={layoutOption}
-                onClick={() => handleLayoutChange(layoutOption)}
-                className={`
-                  rounded px-3 py-1.5 text-sm font-medium transition-colors
-                  ${
-                    layout === layoutOption
-                      ? 'bg-sky-500/20 text-sky-400'
-                      : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
-                  }
-                `}
-              >
-                {layoutOption}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Add Chart Button */}
-        <button
-          onClick={handleAddChart}
-          disabled={charts.length >= maxCharts}
-          className={`
-            flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors
-            ${
-              charts.length >= maxCharts
-                ? 'cursor-not-allowed bg-gray-700/30 text-gray-500'
-                : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-            }
-          `}
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          添加图表 ({charts.length}/{maxCharts})
-        </button>
-
-        {/* Chart Count Info */}
-        <div className="ml-auto text-xs text-gray-500">
-          {charts.length} 个图表 · {layout} 布局
-        </div>
-      </div>
-
       {/* Charts Grid */}
-      <div className={`grid gap-4 ${getGridClass()}`}>
+      <div className={`grid gap-4 ${getGridCols()}`}>
         {charts.map((chart) => (
           <ChartCard
             key={chart.id}
@@ -305,7 +199,43 @@ export default function MultiChartContainer({
             onExitFullscreen={handleExitFullscreen}
           />
         ))}
+
+        {/* Add Chart Placeholder */}
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="
+            group relative flex min-h-[200px] flex-col items-center justify-center
+            rounded-lg border-2 border-dashed border-gray-700/50
+            bg-gray-800/30 transition-all
+            hover:border-sky-500/50 hover:bg-gray-800/50
+          "
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-700/50 text-gray-500 transition-colors group-hover:bg-sky-500/20 group-hover:text-sky-400">
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          </div>
+          <span className="mt-3 text-sm text-gray-500 transition-colors group-hover:text-gray-400">
+            添加图表
+          </span>
+        </button>
       </div>
+
+      {/* Add Chart Modal */}
+      <AddChartModal
+        isOpen={showAddModal}
+        pairs={pairs}
+        intervals={intervals}
+        defaultSymbol={defaultSymbol}
+        defaultInterval={defaultInterval}
+        onClose={() => setShowAddModal(false)}
+        onConfirm={handleAddChart}
+      />
     </div>
   );
 }

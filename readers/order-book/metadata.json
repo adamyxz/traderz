@@ -1,0 +1,27 @@
+{
+  "name": "order-book",
+  "description": "从币安永续合约获取订单簿深度数据，返回指定交易对的买单(bids)和卖单(asks)深度信息",
+  "parameters": [
+    {
+      "name": "symbol",
+      "type": "string",
+      "displayName": "交易对",
+      "description": "币安交易对符号，如 BTCUSDT",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{2,20}USDT$"
+      }
+    },
+    {
+      "name": "limit",
+      "type": "number",
+      "displayName": "深度档位",
+      "description": "返回的深度档位数，可选值: 5, 10, 20, 50, 100, 500, 1000",
+      "required": false,
+      "defaultValue": 500,
+      "validation": {
+        "enum": [5, 10, 20, 50, 100, 500, 1000]
+      }
+    }
+  ]
+}

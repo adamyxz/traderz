@@ -1,5 +1,5 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { toTOONTable } from '@/lib/toon';
+import { optimizeKlineData } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
@@ -32,19 +32,14 @@ const InputSchema = z.object({
   endTime: z.number().int().min(0).default(0),
 });
 
-// K线数据类型 (使用短属性名)
-interface KlineTick {
+// 简化的K线数据类型 - 只保留OHLCV
+interface SimplifiedKline {
   ot: number; // openTime
   o: string; // open
   h: string; // high
   l: string; // low
   c: string; // close
   v: string; // volume
-  ct: number; // closeTime
-  qv: string; // quoteVolume
-  n: number; // trades
-  tbv: string; // takerBuyBaseVolume
-  tqv: string; // takerBuyQuoteVolume
 }
 
 // 执行函数
@@ -58,10 +53,11 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     console.log(`[Reader] Fetching klines for ${symbol} ${interval}, limit: ${limit}`);
 
-    // 构建币安API请求
-    const baseUrl = 'https://api.binance.com/api/v3/klines';
+    // 构建币安永续合约API请求
+    const baseUrl = 'https://fapi.binance.com/fapi/v1/continuousKlines';
     const params = new URLSearchParams({
-      symbol: symbol.toUpperCase(),
+      pair: symbol.toUpperCase(),
+      contractType: 'PERPETUAL',
       interval,
       limit: limit.toString(),
     });
@@ -87,41 +83,45 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     const rawData = await response.json();
 
-    // 解析K线数据为紧凑格式
+    // 解析K线数据 - 只保留OHLCV字段
     // 币安返回格式: [openTime, open, high, low, close, volume, closeTime, quoteVolume, trades, takerBuyBaseVolume, takerBuyQuoteVolume]
-    const klines: KlineTick[] = rawData.map((tick: (string | number)[]) => ({
+    const klines: SimplifiedKline[] = rawData.map((tick: (string | number)[]) => ({
       ot: tick[0],
       o: tick[1],
       h: tick[2],
       l: tick[3],
       c: tick[4],
       v: tick[5],
-      ct: tick[6],
-      qv: tick[7],
-      n: tick[8],
-      tbv: tick[9],
-      tqv: tick[10],
     }));
 
-    // 使用 TOON 格式输出 (压缩上下文)
-    const toonData = toTOONTable(klines as unknown as Record<string, unknown>[], [
-      'ot',
-      'o',
-      'h',
-      'l',
-      'c',
-      'v',
-      'ct',
-      'qv',
-      'n',
-      'tbv',
-      'tqv',
-    ]);
+    // 应用5个优化方案：价格精度、相对时间戳等
+    const { baseTime, data: optimizedKlines } = optimizeKlineData(
+      klines as unknown as Record<string, unknown>[],
+      {
+        startTimeKey: 'ot',
+        priceKeys: ['o', 'h', 'l', 'c', 'v'],
+        smartRound: true,
+        symbol: symbol,
+      }
+    );
+
+    // 构建CSV，根据优化后的字段动态生成表头和数据
+    const keys =
+      optimizedKlines.length > 0
+        ? Object.keys(optimizedKlines[0])
+        : ['dot', 'o', 'h', 'l', 'c', 'v'];
+    const csvHeader = keys.join(',');
+    const csvRows = optimizedKlines.map((row: Record<string, unknown>) => {
+      return keys.map((k) => row[k]).join(',');
+    });
+    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
 
     const result = {
       s: symbol,
       i: interval,
-      d: toonData,
+      fmt: 'csv',
+      bT: baseTime, // base timestamp for relative times
+      d: csvData,
       cnt: klines.length,
       fa: new Date().toISOString(),
     };

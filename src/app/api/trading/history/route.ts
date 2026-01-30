@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing symbol or interval parameter' }, { status: 400 });
     }
 
-    // Fetch from Binance REST API
-    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
+    // Fetch from Binance Continuous Contract API
+    const url = `https://fapi.binance.com/fapi/v1/continuousKlines?pair=${symbol.toUpperCase()}&contractType=PERPETUAL&interval=${interval}&limit=${limit}`;
     const response = await fetch(url);
 
     const data = await response.json();

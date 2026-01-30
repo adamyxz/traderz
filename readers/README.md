@@ -2,100 +2,16 @@
 
 本文档说明如何创建和管理 Traderz 系统中的 Reader。
 
-## 🎯 TOON 格式要求
+## 核心原则
 
-**重要**: 所有 Reader 必须统一输出 **TOON (Token-Oriented Object Notation)** 格式，以压缩 LLM 上下文消耗。
+开发 Reader 时必须遵循以下原则：
 
-### 什么是 TOON 格式？
+1. **数据质量优先** - 确保数据完整性和准确性
+2. **Token 压缩** - 在保证质量的前提下最大化压缩 LLM token 消耗
+3. **标准输出** - 统一使用 CSV 格式输出数据
+4. **健壮性** - 完善的输入验证和错误处理
 
-TOON 是一种专为 LLM 优化的紧凑数据表示格式，通过以下方式减少 token 使用：
-
-- 使用短属性名（如 `s` 代替 `symbol`，`p` 代替 `price`）
-- 移除不必要的引号和空格
-- 使用紧凑的数组表示
-- 表格数据使用紧凑表格格式
-
-### TOON 格式示例
-
-**普通 JSON (约 150 tokens):**
-
-```json
-{
-  "symbol": "BTCUSDT",
-  "aggTrades": [
-    {
-      "aggTradeId": 123456789,
-      "price": "50000.50",
-      "quantity": "0.5",
-      "timestamp": 1234567890000,
-      "isBuyerMaker": true
-    }
-  ],
-  "count": 1
-}
-```
-
-**TOON 格式 (约 80 tokens):**
-
-```
-s=BTCUSDT
-d=[
-  {a=123456789,T=1234567890000,p="50000.50",q="0.5",m=true}
-]
-cnt=1
-```
-
-### 实现要求
-
-1. **导入 TOON 工具**:
-
-```typescript
-import { toTOONTable } from '@/lib/toon';
-```
-
-2. **使用短属性名定义接口**:
-
-```typescript
-interface AggTrade {
-  a: number; // aggTradeId
-  p: string; // price
-  q: string; // quantity
-  T: number; // timestamp
-  m: boolean; // isBuyerMaker
-}
-```
-
-3. **使用 toTOONTable 格式化数组数据**:
-
-```typescript
-const toonData = toTOONTable(aggTrades, ['a', 'T', 'p', 'q', 'm']);
-const result = {
-  s: symbol, // 短属性名
-  d: toonData, // TOON 格式数据
-  cnt: aggTrades.length,
-  fa: new Date().toISOString(),
-};
-```
-
-### 常用短属性名映射
-
-| 完整名称     | 短名称        |
-| ------------ | ------------- |
-| symbol       | s             |
-| price        | p             |
-| quantity     | q             |
-| timestamp    | t, T          |
-| open/ot      | open/openTime |
-| high/h       | high          |
-| low/l        | low           |
-| close/c      | close         |
-| volume/v     | volume        |
-| count/cnt    | count         |
-| interval/i   | interval      |
-| data/d       | data          |
-| fetchedAt/fa | fetchedAt     |
-
-## 📁 目录结构
+## 目录结构
 
 ```
 readers/
@@ -106,9 +22,172 @@ readers/
 
 每个 Reader 必须有自己的独立目录，包含 `index.ts` 和 `metadata.json` 两个文件。
 
-## 📄 元数据格式 (metadata.json)
+## 标准输出格式
 
-`metadata.json` 文件定义了 Reader 的基本信息和参数：
+所有 Reader 必须返回以下标准结构：
+
+```typescript
+{
+  success: true,
+  data: {
+    s: string,          // symbol (交易对)
+    fmt: 'csv',         // 格式标识，固定为 'csv'
+    bT: number,         // base timestamp (基准时间戳，用于相对时间)
+    d: string,          // CSV 数据字符串
+    cnt: number,        // 数据条数
+    fa: string,         // fetched at (ISO 8601 格式时间戳)
+    // ... 其他业务特定字段
+  },
+  metadata: {
+    executionTime: number,
+    timestamp: string,
+    version: string,
+  },
+}
+```
+
+### CSV 数据格式
+
+CSV 数据必须包含表头，每行一条记录，字段用逗号分隔：
+
+```csv
+dT,p,q,m
+0,50000.5,0.5,1
+5000,50001.0,0.3,0
+12000,50000.8,0.7,1
+```
+
+**关键约定**：
+
+- 第一行是表头，定义字段顺序
+- 时间字段使用相对时间戳（如 `dT` = delta Time）
+- 布尔值用 `1`/`0` 表示
+- 价格保留合理精度（见优化方案）
+
+## Token 压缩策略
+
+系统提供 5 个优化方案，可在保证数据质量的前提下压缩 40-60% 的 token：
+
+### 1. 精度优化
+
+移除价格字符串末尾多余的零：
+
+- `50000.50000` → `50000.5`
+- `0.00100000` → `0.001`
+
+```typescript
+import { trimPrice } from '@/lib/toon';
+
+const optimized = trimPrice('50000.50000'); // "50000.5"
+```
+
+### 2. 相对时间戳
+
+使用相对于第一条记录的时间差，而非绝对时间戳：
+
+```csv
+# 原始格式 (13位时间戳)
+T
+1735689600000
+1735689605000
+1735689610000
+
+# 优化后 (毫秒差值)
+dT
+0
+5000
+10000
+```
+
+配合 `bT` (base timestamp) 使用，可完全恢复原始时间。
+
+```typescript
+import { toRelativeTimestamps } from '@/lib/toon';
+
+const { baseTime, data } = toRelativeTimestamps(records, 'T');
+// baseTime: 1735689600000
+// data[0].dT: 0, data[1].dT: 5000, ...
+```
+
+### 3. 大数压缩
+
+对于递增的大 ID（如 `aggTradeId`），存储相对于基准的差值：
+
+```typescript
+import { compressLargeNumbers } from '@/lib/toon';
+
+const { baseValue, data } = compressLargeNumbers(records, 'a');
+// baseValue: 123456789
+// data[0].da: 0, data[1].da: 1, data[2].da: 2, ...
+```
+
+### 4. 智能精度取整
+
+根据价格范围动态调整精度，减少不必要的位数：
+
+```typescript
+import { smartRoundPrice } from '@/lib/toon';
+
+// 不同价格区间使用不同精度
+smartRoundPrice(0.00001234, 'BTCUSDT'); // "0.00001234" (8位)
+smartRoundPrice(0.01234, 'ETHUSDT'); // "0.0123" (4位)
+smartRoundPrice(50000.123, 'BTCUSDT'); // "50000.1" (1位)
+```
+
+**精度规则**：
+
+- < 0.00001: 8 位小数（shits/mems）
+- < 0.001: 6 位小数（小币）
+- < 1: 4 位小数（中小币）
+- < 10: 2 位小数（中等币）
+- > = 10: 1 位小数（大币如 BTC/ETH）
+
+### 5. 省略默认值
+
+省略字段值为默认值的数据（如 `M: false`）：
+
+```typescript
+import { omitDefaultValues } from '@/lib/toon';
+
+const data = omitDefaultValues(records, { M: false });
+// 移除所有 M: false 的字段，仅保留 M: true 的记录
+```
+
+## 综合优化函数
+
+### optimizeTradeData
+
+适用于成交/聚合成交数据：
+
+```typescript
+import { optimizeTradeData } from '@/lib/toon';
+
+const { baseTime, baseId, data } = optimizeTradeData(aggTrades, {
+  timestampKey: 'T', // 时间戳字段
+  idKey: 'a', // ID 字段（可选）
+  priceKeys: ['p', 'q'], // 价格相关字段
+  smartRound: true, // 启用智能取整
+  symbol: symbol, // 用于精度判断
+});
+```
+
+### optimizeKlineData
+
+适用于 K 线数据：
+
+```typescript
+import { optimizeKlineData } from '@/lib/toon';
+
+const { baseTime, data } = optimizeKlineData(klines, {
+  startTimeKey: 'ot', // 开盘时间字段
+  endTimeKey: 'ct', // 收盘时间字段（可选）
+  priceKeys: ['o', 'h', 'l', 'c', 'v'], // 价格相关字段
+  smartRound: true,
+  symbol: symbol,
+});
+```
+
+## 元数据格式 (metadata.json)
 
 ```json
 {
@@ -116,21 +195,22 @@ readers/
   "description": "Reader 功能描述",
   "parameters": [
     {
-      "name": "param1",
+      "name": "symbol",
       "type": "string",
-      "displayName": "参数1显示名称",
-      "description": "参数的详细描述",
+      "displayName": "交易对",
+      "description": "币安交易对符号，如 BTCUSDT",
       "required": true,
       "validation": {
-        "pattern": "^[A-Z]{2,6}USDT$"
+        "pattern": "^[A-Z]{2,20}USDT$"
       }
     },
     {
-      "name": "param2",
+      "name": "limit",
       "type": "number",
-      "displayName": "参数2",
+      "displayName": "数据条数",
+      "description": "获取的数据条数",
       "required": false,
-      "defaultValue": 100,
+      "defaultValue": 500,
       "validation": {
         "min": 1,
         "max": 1000
@@ -140,64 +220,104 @@ readers/
 }
 ```
 
-### 字段说明
+### 参数类型说明
 
-**基本信息:**
+| type    | 说明      | 验证规则        |
+| ------- | --------- | --------------- |
+| string  | 字符串    | pattern (正则)  |
+| number  | 数字      | min, max        |
+| boolean | 布尔值    | -               |
+| enum    | 枚举      | enum (枚举数组) |
+| object  | JSON 对象 | -               |
+| array   | 数组      | -               |
 
-- `name` (string, 必需): Reader 的唯一标识符，使用 kebab-case
-- `description` (string, 必需): Reader 功能描述
-
-**参数定义 (parameters):**
-
-- `name` (string): 参数名称，使用 camelCase
-- `type` (string, 必需): 参数类型，可选值：
-  - `string`: 字符串
-  - `number`: 数字
-  - `boolean`: 布尔值
-  - `object`: JSON 对象
-  - `array`: 数组
-  - `enum`: 枚举值
-- `displayName` (string, 必需): 参数的显示名称
-- `description` (string): 参数描述
-- `required` (boolean): 是否必填，默认 `false`
-- `defaultValue` (any): 默认值
-- `validation` (object): 验证规则
-  - `min`: 数字最小值
-  - `max`: 数字最大值
-  - `pattern`: 正则表达式（用于 string 类型）
-  - `enum`: 枚举值数组（用于 enum 类型）
-
-## 💻 实现文件格式 (index.ts)
-
-`index.ts` 文件必须导出一个符合 `ReaderModule` 接口的模块：
+## 实现模板 (index.ts)
 
 ```typescript
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
+import { optimizeTradeData, optimizeKlineData } from '@/lib/toon';
+import metadataJson from './metadata.json';
 import { z } from 'zod';
 
-// 1. 定义输入验证 schema（可选但推荐）
+// 1. 输入验证 Schema
 const InputSchema = z.object({
-  symbol: z.string().regex(/^[A-Z]{2,6}USDT$/),
-  timeframe: z.enum(['1m', '5m', '15m', '1h', '4h', '1d']),
-  limit: z.number().min(1).max(1000).default(100),
+  symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, {
+    message: '交易对格式错误，应为 BTCUSDT 格式',
+  }),
+  limit: z.number().int().min(1).max(1000).default(500),
+  // 其他参数...
 });
 
-// 2. 实现执行函数（必需）
-async function execute(input: any, context: ReaderContext): Promise<ReaderOutput> {
+// 2. 简化的数据接口（只保留必要字段）
+interface SimplifiedData {
+  T: number; // timestamp
+  p: string; // price
+  q: string; // quantity
+  m: boolean; // isBuyerMaker
+}
+
+// 3. 执行函数
+async function execute(input: ReaderInput, _context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
 
   try {
     // 验证输入
-    const validatedInput = InputSchema.parse(input);
+    const { symbol, limit } = InputSchema.parse(input);
 
-    // 实现业务逻辑
-    const result = {
-      // 你的返回数据
-    };
+    console.log(`[Reader] Fetching data for ${symbol}, limit: ${limit}`);
 
+    // 调用外部 API
+    const response = await fetch(/* API URL */);
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const rawData = await response.json();
+
+    // 4. 解析并简化数据（只保留必要字段）
+    const data: SimplifiedData[] = rawData.map((item) => ({
+      T: item.timestamp,
+      p: item.price,
+      q: item.quantity,
+      m: item.isBuyerMaker,
+    }));
+
+    // 5. 应用优化方案
+    const { baseTime, data: optimizedData } = optimizeTradeData(
+      data as unknown as Record<string, unknown>[],
+      {
+        timestampKey: 'T',
+        priceKeys: ['p', 'q'],
+        smartRound: true,
+        symbol: symbol,
+      }
+    );
+
+    // 6. 构建 CSV（动态生成表头）
+    const keys = optimizedData.length > 0 ? Object.keys(optimizedData[0]) : ['dT', 'p', 'q', 'm'];
+    const csvHeader = keys.join(',');
+    const csvRows = optimizedData.map((row: Record<string, unknown>) => {
+      return keys
+        .map((k) => {
+          const val = row[k];
+          if (typeof val === 'boolean') return val ? 1 : 0;
+          return val;
+        })
+        .join(',');
+    });
+    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
+
+    // 7. 返回标准格式
     return {
       success: true,
-      data: result,
+      data: {
+        s: symbol,
+        fmt: 'csv',
+        bT: baseTime,
+        d: csvData,
+        cnt: data.length,
+        fa: new Date().toISOString(),
+      },
       metadata: {
         executionTime: Date.now() - startTime,
         timestamp: new Date().toISOString(),
@@ -205,6 +325,8 @@ async function execute(input: any, context: ReaderContext): Promise<ReaderOutput
       },
     };
   } catch (error) {
+    console.error('[Reader] Error:', error);
+
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -212,7 +334,7 @@ async function execute(input: any, context: ReaderContext): Promise<ReaderOutput
   }
 }
 
-// 3. 参数验证函数（可选）
+// 8. 参数验证函数（可选但推荐）
 function validate(input: ReaderInput) {
   try {
     InputSchema.parse(input);
@@ -221,25 +343,70 @@ function validate(input: ReaderInput) {
     if (error instanceof z.ZodError) {
       return {
         valid: false,
-        errors: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`),
+        errors: error.issues.map((e) => `${e.path.join('.')}: ${e.message}`),
       };
     }
     return { valid: false, errors: ['Validation failed'] };
   }
 }
 
-// 4. 导出模块（必需）
+// 9. 导出模块
 const readerModule: ReaderModule = {
+  metadata: metadataJson as ReaderModule['metadata'],
   execute,
-  validate, // 可选
+  validate,
 };
 
 export default readerModule;
 ```
 
-## 🔧 执行上下文 (ReaderContext)
+## 数据质量保证
 
-执行函数接收一个 `context` 对象，包含以下信息：
+### 输入验证
+
+- 使用 Zod Schema 验证所有输入参数
+- 设置合理的范围限制（如 `min: 1, max: 1000`）
+- 提供清晰的错误消息
+
+### API 错误处理
+
+```typescript
+const response = await fetch(url);
+if (!response.ok) {
+  const errorText = await response.text();
+  throw new Error(`API请求失败: ${response.status} ${errorText}`);
+}
+```
+
+### 数据完整性
+
+- 只保留业务必要的字段
+- 确保字段类型一致性
+- 处理缺失值和异常值
+
+## 常用短属性名
+
+| 完整名称     | 短名称 | 说明         |
+| ------------ | ------ | ------------ |
+| symbol       | s      | 交易对       |
+| price        | p      | 价格         |
+| quantity     | q      | 数量         |
+| timestamp    | T, t   | 时间戳       |
+| openTime     | ot     | 开盘时间     |
+| open         | o      | 开盘价       |
+| high         | h      | 最高价       |
+| low          | l      | 最低价       |
+| close        | c      | 收盘价       |
+| volume       | v      | 成交量       |
+| isBuyerMaker | m      | 是否买方挂单 |
+| count        | cnt    | 计数         |
+| interval     | i      | 周期         |
+| delta        | d      | 差值/增量    |
+| base         | b      | 基准值       |
+| fetchedAt    | fa     | 获取时间     |
+| format       | fmt    | 格式         |
+
+## 执行上下文 (ReaderContext)
 
 ```typescript
 interface ReaderContext {
@@ -251,9 +418,7 @@ interface ReaderContext {
 }
 ```
 
-## 📤 返回值格式 (ReaderOutput)
-
-执行函数必须返回符合以下格式的对象：
+## 返回值格式 (ReaderOutput)
 
 ```typescript
 interface ReaderOutput<T = unknown> {
@@ -261,7 +426,6 @@ interface ReaderOutput<T = unknown> {
   data?: T; // 返回数据（成功时）
   error?: string; // 错误信息（失败时）
   metadata?: {
-    // 元数据（可选）
     executionTime: number; // 执行耗时（毫秒）
     timestamp: string; // 时间戳
     version: string; // 版本号
@@ -269,283 +433,31 @@ interface ReaderOutput<T = unknown> {
 }
 ```
 
-## ⚠️ 重要限制
+## 最佳实践
 
-### 安全限制
+1. **保持专注** - 每个 Reader 只做一件事
+2. **验证优先** - 始终验证输入参数
+3. **错误友好** - 提供清晰的错误消息
+4. **合理限制** - 设置默认值和范围限制
+5. **日志输出** - 使用 `console.log` 输出关键信息（带 `[Reader]` 前缀）
+6. **精度权衡** - 在精度和 token 消耗之间找到平衡
+7. **测试充分** - 测试边界情况和异常输入
 
-- Reader 在独立的子进程中执行
-- 默认超时时间 30 秒（可在数据库中配置）
-- 无法访问文件系统（除了读取配置）
-- 无法进行网络请求（除非明确允许）
+## 性能考虑
 
-### 最佳实践
+- 优化方案通常可减少 **40-60%** 的 token 使用
+- 对于大量数据（100+ 条记录），效果更明显
+- CSV 格式化开销可忽略不计
+- 主要节省在 LLM API 调用成本
 
-1. **输入验证**: 始终验证输入参数，使用 Zod schema
-2. **错误处理**: 捕获所有异常并返回友好的错误消息
-3. **性能**: 避免长时间运行的操作，考虑异步处理
-4. **日志**: 使用 `console.log` 输出调试信息（会添加 `[Reader]` 前缀）
-5. **纯函数**: 尽量保持执行函数为纯函数，避免副作用
+## 完整示例
 
-## 📋 完整示例
+参见以下已验证的 Reader：
 
-### metadata.json
+1. **binance-agg-trades** - 聚合成交数据
+   - 文件：`readers/binance-agg-trades/index.ts`
+   - 优化：相对时间戳、智能取整、大数压缩
 
-```json
-{
-  "name": "market-data-fetcher",
-  "description": "从交易所获取实时市场数据",
-  "parameters": [
-    {
-      "name": "symbol",
-      "type": "string",
-      "displayName": "交易对",
-      "description": "加密货币交易对符号，如 BTCUSDT",
-      "required": true,
-      "validation": {
-        "pattern": "^[A-Z]{2,6}USDT$"
-      }
-    },
-    {
-      "name": "interval",
-      "type": "enum",
-      "displayName": "K线周期",
-      "description": "K线数据的时间周期",
-      "required": true,
-      "validation": {
-        "enum": ["1m", "5m", "15m", "1h", "4h", "1d"]
-      }
-    },
-    {
-      "name": "limit",
-      "type": "number",
-      "displayName": "数据条数",
-      "description": "获取的K线数据条数",
-      "required": false,
-      "defaultValue": 100,
-      "validation": {
-        "min": 1,
-        "max": 1000
-      }
-    }
-  ]
-}
-```
-
-### index.ts (使用 TOON 格式)
-
-```typescript
-import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { toTOONTable } from '@/lib/toon';
-import { z } from 'zod';
-
-// 输入验证
-const InputSchema = z.object({
-  symbol: z.string().regex(/^[A-Z]{2,6}USDT$/, {
-    message: '交易对格式错误，应为 BTCUSDT 格式',
-  }),
-  interval: z.enum(['1m', '5m', '15m', '1h', '4h', '1d'], {
-    errorMap: () => ({ message: '周期必须是 1m, 5m, 15m, 1h, 4h, 1d 之一' }),
-  }),
-  limit: z.number().min(1).max(1000).default(100),
-});
-
-// 使用短属性名定义数据接口（TOON 格式）
-interface KlineTick {
-  t: number; // time
-  o: number; // open
-  h: number; // high
-  l: number; // low
-  c: number; // close
-  v: number; // volume
-}
-
-// 执行函数
-async function execute(input: any, context: ReaderContext): Promise<ReaderOutput> {
-  const startTime = Date.now();
-
-  try {
-    // 验证输入
-    const { symbol, interval, limit } = InputSchema.parse(input);
-
-    console.log(`[Reader] Fetching ${symbol} ${interval} data, limit: ${limit}`);
-
-    // 模拟获取数据（使用短属性名）
-    const ticks: KlineTick[] = Array.from({ length: limit }, (_, i) => ({
-      t: Date.now() - (limit - i) * 60000,
-      o: 50000 + Math.random() * 1000,
-      h: 51000 + Math.random() * 1000,
-      l: 49000 + Math.random() * 1000,
-      c: 50000 + Math.random() * 1000,
-      v: Math.random() * 1000,
-    }));
-
-    // 使用 TOON 格式化数据
-    const toonData = toTOONTable(ticks, ['t', 'o', 'h', 'l', 'c', 'v']);
-
-    const result = {
-      s: symbol, // 短属性名
-      i: interval, // 短属性名
-      d: toonData, // TOON 格式数据
-      cnt: ticks.length,
-      fa: new Date().toISOString(),
-    };
-
-    return {
-      success: true,
-      data: result,
-      metadata: {
-        executionTime: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-        version: '1.0.0',
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-  }
-}
-
-// 参数验证
-function validate(input: ReaderInput) {
-  try {
-    InputSchema.parse(input);
-    return { valid: true };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return {
-        valid: false,
-        errors: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`),
-      };
-    }
-    return { valid: false, errors: ['Validation failed'] };
-  }
-}
-
-// 导出模块
-const readerModule: ReaderModule = {
-  execute,
-  validate,
-};
-
-export default readerModule;
-```
-
-### 输出对比
-
-**JSON 格式 (约 200 tokens):**
-
-```json
-{
-  "symbol": "BTCUSDT",
-  "interval": "1h",
-  "ticks": [
-    {
-      "time": 1234567890,
-      "open": 50000,
-      "high": 51000,
-      "low": 49000,
-      "close": 50500,
-      "volume": 100
-    },
-    {
-      "time": 1234571490,
-      "open": 50500,
-      "high": 51500,
-      "low": 50000,
-      "close": 51000,
-      "volume": 150
-    }
-  ],
-  "count": 2
-}
-```
-
-**TOON 格式 (约 100 tokens):**
-
-```
-s=BTCUSDT
-i=1h
-d=[
-  {t=1234567890,o=50000,h=51000,l=49000,c=50500,v=100}
-  {t=1234571490,o=50500,h=51500,l=50000,c=51000,v=150}
-]
-cnt=2
-```
-
-## 🚀 部署流程
-
-1. **创建目录**: 在 `readers/` 下创建新目录
-2. **编写代码**: 创建 `index.ts` 和 `metadata.json`
-3. **同步到数据库**: 在管理界面点击 "Sync from Files" 按钮
-4. **测试**: 使用 "Test" 按钮测试 Reader 是否正常工作
-
-## 📚 相关类型定义
-
-所有类型定义都在 `src/lib/readers/types.ts` 文件中：
-
-```typescript
-// Reader 输入
-interface ReaderInput {
-  [key: string]: unknown;
-}
-
-// Reader 输出
-interface ReaderOutput<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  metadata?: {
-    executionTime: number;
-    timestamp: string;
-    version: string;
-  };
-}
-
-// Reader 模块
-interface ReaderModule {
-  execute: (input: ReaderInput, context: ReaderContext) => Promise<ReaderOutput>;
-  validate?: (input: ReaderInput) => { valid: boolean; errors?: string[] };
-}
-```
-
-## 💡 提示
-
-- **必须使用 TOON 格式输出** 以压缩上下文
-- 使用 TypeScript 的类型检查来避免错误
-- 在开发时使用 `console.log` 调试，生产环境会自动记录
-- 保持 Reader 简单和专注，每个 Reader 只做一件事
-- 复杂的业务逻辑应该放在服务层，Reader 只是调用入口
-- 定义接口时直接使用短属性名，避免重复映射
-
-## 📦 TOON 工具函数
-
-```typescript
-// src/lib/toon/index.ts 提供以下工具:
-
-// 将对象转换为 TOON 格式
-toTOON(obj: ToonValue, indent?: number): string
-
-// 将对象数组转换为 TOON 表格格式（推荐用于列表数据）
-toTOONTable(arr: ToonObject[], keyOrder?: string[]): string
-
-// 创建自定义短键映射的格式化器
-createTOONFormatter(customShortKeys: Record<string, string>)
-```
-
-## 🔄 迁移现有 Reader
-
-如果需要将现有 JSON 输出的 Reader 迁移到 TOON 格式：
-
-1. 导入 `toTOONTable` 或 `toTOON`
-2. 修改接口定义，使用短属性名
-3. 使用 `toTOONTable` 格式化数组数据
-4. 更新返回对象的属性名使用短名称
-5. 测试确保输出格式正确
-
-## ⚡ 性能考虑
-
-- TOON 格式通常可减少 **40-60%** 的 token 使用
-- 对于大量数据（如 100+ 条记录），效果更明显
-- 格式化开销可忽略不计，主要节省在 LLM API 调用成本
+2. **kline-fetcher** - K线数据
+   - 文件：`readers/kline-fetcher/index.ts`
+   - 优化：相对时间戳、OHLCV 精度优化

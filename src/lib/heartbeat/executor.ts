@@ -4,6 +4,7 @@ import {
   traderKlineIntervals,
   readers,
   traderReaders,
+  readerParameters,
   positions,
   heartbeatHistory,
   tradingPairs,
@@ -63,15 +64,16 @@ export async function executeHeartbeat(trader: Trader) {
   try {
     // 1. Validate active time
     if (!isWithinActiveHours(trader)) {
-      await db
+      const [updated] = await db
         .update(heartbeatHistory)
         .set({
           status: 'skipped_outside_hours',
           completedAt: new Date(),
           duration: Date.now() - startTime,
         })
-        .where(eq(heartbeatHistory.id, heartbeatRecord.id));
-      return heartbeatRecord;
+        .where(eq(heartbeatHistory.id, heartbeatRecord.id))
+        .returning();
+      return updated;
     }
 
     // 2. Get K-line intervals
@@ -81,15 +83,16 @@ export async function executeHeartbeat(trader: Trader) {
       .where(eq(traderKlineIntervals.traderId, trader.id));
 
     if (intervalRelations.length === 0) {
-      await db
+      const [updated] = await db
         .update(heartbeatHistory)
         .set({
           status: 'skipped_no_intervals',
           completedAt: new Date(),
           duration: Date.now() - startTime,
         })
-        .where(eq(heartbeatHistory.id, heartbeatRecord.id));
-      return heartbeatRecord;
+        .where(eq(heartbeatHistory.id, heartbeatRecord.id))
+        .returning();
+      return updated;
     }
 
     const traderIntervals = await db
@@ -109,15 +112,16 @@ export async function executeHeartbeat(trader: Trader) {
       .where(eq(traderReaders.traderId, trader.id));
 
     if (readerRelations.length === 0) {
-      await db
+      const [updated] = await db
         .update(heartbeatHistory)
         .set({
           status: 'skipped_no_readers',
           completedAt: new Date(),
           duration: Date.now() - startTime,
         })
-        .where(eq(heartbeatHistory.id, heartbeatRecord.id));
-      return heartbeatRecord;
+        .where(eq(heartbeatHistory.id, heartbeatRecord.id))
+        .returning();
+      return updated;
     }
 
     const traderReadersList = await db
@@ -129,6 +133,26 @@ export async function executeHeartbeat(trader: Trader) {
           readerRelations.map((r) => r.readerId)
         )
       );
+
+    // Get all reader parameters with their default values
+    const allReaderParams = await db
+      .select()
+      .from(readerParameters)
+      .where(
+        inArray(
+          readerParameters.readerId,
+          traderReadersList.map((r) => r.id)
+        )
+      );
+
+    // Group parameters by readerId for easy lookup
+    const paramsByReaderId: Record<number, typeof allReaderParams> = {};
+    for (const param of allReaderParams) {
+      if (!paramsByReaderId[param.readerId]) {
+        paramsByReaderId[param.readerId] = [];
+      }
+      paramsByReaderId[param.readerId].push(param);
+    }
 
     // 4. Get current positions
     const currentPositions = await db
@@ -170,12 +194,30 @@ export async function executeHeartbeat(trader: Trader) {
             environment: (process.env.NODE_ENV as 'development' | 'production') || 'development',
           };
 
+          // Build input with default values applied
+          const readerParams = paramsByReaderId[reader.id] || [];
+          const inputWithDefaults: Record<string, unknown> = {
+            symbol: tradingPairSymbol,
+            interval: interval.code,
+          };
+
+          // Apply default values for parameters that have them
+          for (const paramDef of readerParams) {
+            if (paramDef.defaultValue !== null && paramDef.defaultValue !== undefined) {
+              try {
+                inputWithDefaults[paramDef.paramName] = JSON.parse(paramDef.defaultValue);
+              } catch {
+                inputWithDefaults[paramDef.paramName] = paramDef.defaultValue;
+              }
+            }
+          }
+
           const result = await executeReader({
             reader: {
               ...reader,
               timeout: reader.timeout || 30000, // Handle null timeout by using default
             },
-            input: { symbol: tradingPairSymbol, interval: interval.code, limit: 100 },
+            input: inputWithDefaults,
             context,
           });
 
@@ -260,7 +302,7 @@ export async function executeHeartbeat(trader: Trader) {
     });
 
     // 9. Update heartbeat record
-    await db
+    const [updated] = await db
       .update(heartbeatHistory)
       .set({
         status: executionResult.success ? 'completed' : 'failed',
@@ -273,12 +315,13 @@ export async function executeHeartbeat(trader: Trader) {
         readersExecuted: JSON.stringify(readersExecuted),
         errorMessage: executionResult.error,
       })
-      .where(eq(heartbeatHistory.id, heartbeatRecord.id));
+      .where(eq(heartbeatHistory.id, heartbeatRecord.id))
+      .returning();
 
-    return heartbeatRecord;
+    return updated;
   } catch (error) {
     console.error(`[Heartbeat] Error:`, error);
-    await db
+    const [updated] = await db
       .update(heartbeatHistory)
       .set({
         status: 'failed',
@@ -286,8 +329,9 @@ export async function executeHeartbeat(trader: Trader) {
         duration: Date.now() - startTime,
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
       })
-      .where(eq(heartbeatHistory.id, heartbeatRecord.id));
-    return heartbeatRecord;
+      .where(eq(heartbeatHistory.id, heartbeatRecord.id))
+      .returning();
+    return updated;
   }
 }
 

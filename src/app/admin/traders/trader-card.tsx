@@ -19,6 +19,7 @@ import {
   Square,
   Briefcase,
   Heart,
+  BookOpen,
 } from 'lucide-react';
 import type { Trader } from '@/db/schema';
 
@@ -43,6 +44,8 @@ interface TraderWithRelations extends Trader {
   preferredTradingPair?: TradingPair;
   preferredKlineIntervals?: KlineInterval[];
   readers?: Reader[];
+  totalReturnRate?: number;
+  totalPnl?: number;
 }
 
 interface TraderCardProps {
@@ -138,11 +141,32 @@ export default function TraderCard({
 
   const status = statusConfig[trader.status];
 
+  // Calculate glow effect based on return rate
+  const getGlowClass = () => {
+    if (!trader.totalReturnRate) return '';
+    if (trader.totalReturnRate > 0) {
+      return 'shadow-lg shadow-emerald-500/50 hover:shadow-emerald-500/70';
+    } else if (trader.totalReturnRate < 0) {
+      return 'shadow-lg shadow-red-500/50 hover:shadow-red-500/70';
+    }
+    return '';
+  };
+
+  const getBorderColorClass = () => {
+    if (!trader.totalReturnRate) return '';
+    if (trader.totalReturnRate > 0) {
+      return 'ring-2 ring-emerald-500/50';
+    } else if (trader.totalReturnRate < 0) {
+      return 'ring-2 ring-red-500/50';
+    }
+    return '';
+  };
+
   return (
     <div
       className={`group relative overflow-hidden rounded-xl p-3 transition-all hover:scale-[1.02] hover:shadow-xl ${
         isSelected ? 'ring-2 ring-sky-500' : ''
-      }`}
+      } ${getGlowClass()} ${getBorderColorClass()}`}
       style={{ backgroundColor: '#2D2D2D' }}
     >
       {/* Top Bar: Name */}
@@ -152,6 +176,32 @@ export default function TraderCard({
 
       {/* Metrics Grid - Compact with Icons */}
       <div className="mb-2 grid grid-cols-3 gap-1.5 text-[10px]">
+        {/* Total Return Rate */}
+        <div className="flex flex-col items-center rounded bg-gray-700/30 p-1.5">
+          <TrendingUp
+            className={`h-3 w-3 mb-0.5 ${
+              trader.totalReturnRate > 0
+                ? 'text-emerald-400'
+                : trader.totalReturnRate < 0
+                  ? 'text-red-400'
+                  : 'text-gray-400'
+            }`}
+          />
+          <span
+            className={`font-semibold ${
+              trader.totalReturnRate > 0
+                ? 'text-emerald-400'
+                : trader.totalReturnRate < 0
+                  ? 'text-red-400'
+                  : 'text-gray-400'
+            }`}
+          >
+            {trader.totalReturnRate !== undefined && trader.totalReturnRate !== null
+              ? `${trader.totalReturnRate >= 0 ? '+' : ''}${trader.totalReturnRate.toFixed(2)}%`
+              : 'N/A'}
+          </span>
+        </div>
+
         {/* Risk Score */}
         <div className="flex flex-col items-center rounded bg-gray-700/30 p-1.5">
           <Shield className="h-3 w-3 text-amber-400 mb-0.5" />
@@ -173,12 +223,42 @@ export default function TraderCard({
           <Zap className="h-3 w-3 text-yellow-400 mb-0.5" />
           <span className="text-white font-semibold">{trader.aggressivenessLevel}</span>
         </div>
+      </div>
 
+      {/* Second Row - Max Positions and PnL */}
+      <div className="mb-2 grid grid-cols-2 gap-1.5 text-[10px]">
         {/* Max Positions */}
         <div className="flex flex-col items-center rounded bg-gray-700/30 p-1.5">
           <Layers className="h-3 w-3 text-purple-400 mb-0.5" />
-          <span className="text-white font-semibold">{trader.maxPositions}</span>
+          <span className="text-white font-semibold">{trader.maxPositions} pos</span>
         </div>
+
+        {/* Total PnL */}
+        {trader.totalPnl !== undefined && trader.totalPnl !== null && (
+          <div className="flex flex-col items-center rounded bg-gray-700/30 p-1.5">
+            <DollarSign
+              className={`h-3 w-3 mb-0.5 ${
+                trader.totalPnl > 0
+                  ? 'text-emerald-400'
+                  : trader.totalPnl < 0
+                    ? 'text-red-400'
+                    : 'text-gray-400'
+              }`}
+            />
+            <span
+              className={`font-semibold ${
+                trader.totalPnl > 0
+                  ? 'text-emerald-400'
+                  : trader.totalPnl < 0
+                    ? 'text-red-400'
+                    : 'text-gray-400'
+              }`}
+            >
+              {trader.totalPnl >= 0 ? '+' : ''}
+              {trader.totalPnl.toFixed(2)}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Risk Control - Inline */}
@@ -228,59 +308,12 @@ export default function TraderCard({
             </span>
           </div>
         )}
-        {/* Strategy Badge */}
-        <div className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-500/20 to-blue-500/20 px-2 py-0.5">
-          <TrendingUp className="h-3 w-3 text-sky-400" />
-          <span className="text-[9px] font-medium text-sky-300">
-            {strategyConfig[trader.tradingStrategy]}
-          </span>
-        </div>
-      </div>
-
-      {/* Risk Control - Inline */}
-      <div className="mb-2 flex items-center gap-2 rounded bg-gray-700/20 px-2 py-1">
-        <div className="flex items-center gap-1 text-[10px]">
-          <ArrowDownRight className="h-3 w-3 text-red-400" />
-          <span className="text-gray-400">{Number(trader.stopLossThreshold).toFixed(0)}%</span>
-        </div>
-        <div className="w-px h-3 bg-gray-600"></div>
-        <div className="flex items-center gap-1 text-[10px]">
-          <ArrowUpRight className="h-3 w-3 text-emerald-400" />
-          <span className="text-gray-400">{Number(trader.positionTakeProfit).toFixed(0)}%</span>
-        </div>
-        <div className="flex-1"></div>
-        <div className="flex items-center gap-1 text-[10px]">
-          <DollarSign className="h-3 w-3 text-sky-400" />
-          <span className="text-gray-400">{Number(trader.maxLeverage).toFixed(1)}x</span>
-        </div>
-      </div>
-
-      {/* Active Hours - Compact */}
-      <div className="mb-2 flex items-center justify-between rounded bg-gray-800/40 px-2 py-1">
-        <div className="flex items-center gap-1 text-[10px] text-gray-400">
-          <Clock className="h-3 w-3" />
-          <span>{trader.activeTimeStart}</span>
-          <span className="text-gray-500">→</span>
-          <span>{trader.activeTimeEnd}</span>
-        </div>
-        <span className="text-[9px] text-gray-500">UTC</span>
-      </div>
-
-      {/* Preferences - Compact with Strategy Badge */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {trader.preferredTradingPair && (
+        {/* Readers */}
+        {trader.readers && trader.readers.length > 0 && (
           <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
-            <Coins className="h-3 w-3 text-orange-400" />
+            <BookOpen className="h-3 w-3 text-green-400" />
             <span className="text-[9px] font-medium text-gray-300">
-              {trader.preferredTradingPair.symbol}
-            </span>
-          </div>
-        )}
-        {trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0 && (
-          <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
-            <BarChart3 className="h-3 w-3 text-blue-400" />
-            <span className="text-[9px] font-medium text-gray-300">
-              {trader.preferredKlineIntervals.map((i) => i.code).join(', ')}
+              {trader.readers.length} reader{trader.readers.length > 1 ? 's' : ''}
             </span>
           </div>
         )}
@@ -322,7 +355,7 @@ export default function TraderCard({
 
       {/* Description Panel on Hover with Actions */}
       {trader.description && (
-        <div className="absolute inset-x-0 bottom-0 z-10 max-h-0 overflow-hidden rounded-b-xl bg-gray-900/98 backdrop-blur-sm transition-all duration-300 group-hover:max-h-[40%] group-hover:p-3 flex flex-col">
+        <div className="absolute inset-x-0 bottom-0 z-20 max-h-0 overflow-hidden rounded-b-xl bg-gray-900/98 backdrop-blur-sm transition-all duration-300 group-hover:max-h-[40%] group-hover:p-3 flex flex-col pointer-events-auto">
           <p className="flex-1 text-[10px] text-gray-300 overflow-y-auto mb-3 line-clamp-6 scrollbar-thin">
             {trader.description}
           </p>
@@ -407,7 +440,7 @@ export default function TraderCard({
       )}
 
       {/* Hover Effect Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 to-blue-500/5 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none" />
+      <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-sky-500/5 to-blue-500/5 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none z-0" />
     </div>
   );
 }

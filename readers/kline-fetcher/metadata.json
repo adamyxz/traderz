@@ -1,6 +1,6 @@
 {
   "name": "kline-fetcher",
-  "description": "从币安获取历史K线数据，返回指定交易对和时间周期的OHLCV数据",
+  "description": "从币安永续合约获取历史K线数据，返回指定交易对和时间周期的OHLCV数据（连续合约）",
   "parameters": [
     {
       "name": "symbol",

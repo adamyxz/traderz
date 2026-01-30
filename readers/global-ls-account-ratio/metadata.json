@@ -1,0 +1,58 @@
+{
+  "name": "global-ls-account-ratio",
+  "description": "获取币安全局多空账户数比数据，包含所有账户的多空账户数比值、多仓账户数比例、空仓账户数比例",
+  "parameters": [
+    {
+      "name": "symbol",
+      "type": "string",
+      "displayName": "交易对",
+      "description": "币安交易对符号，如 BTCUSDT",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{2,20}USDT$"
+      }
+    },
+    {
+      "name": "period",
+      "type": "enum",
+      "displayName": "时间周期",
+      "description": "数据的时间周期",
+      "required": true,
+      "validation": {
+        "enum": ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
+      }
+    },
+    {
+      "name": "limit",
+      "type": "number",
+      "displayName": "数据条数",
+      "description": "获取的数据条数，最大500",
+      "required": false,
+      "defaultValue": 30,
+      "validation": {
+        "min": 1,
+        "max": 500
+      }
+    },
+    {
+      "name": "startTime",
+      "type": "number",
+      "displayName": "开始时间戳",
+      "description": "开始时间的毫秒时间戳",
+      "required": false,
+      "validation": {
+        "min": 0
+      }
+    },
+    {
+      "name": "endTime",
+      "type": "number",
+      "displayName": "结束时间戳",
+      "description": "结束时间的毫秒时间戳",
+      "required": false,
+      "validation": {
+        "min": 0
+      }
+    }
+  ]
+}

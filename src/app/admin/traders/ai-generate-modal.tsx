@@ -49,9 +49,9 @@ export default function AiGenerateModal({ isOpen, onClose, onStart }: AiGenerate
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div
-        className="relative w-full max-w-lg rounded-xl p-6"
+        className="relative z-10 w-full max-w-lg rounded-xl p-6 shadow-2xl"
         style={{ backgroundColor: '#2D2D2D' }}
       >
         {/* Close Button */}

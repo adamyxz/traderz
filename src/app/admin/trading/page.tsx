@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
 import MultiChartContainer from './components/multi-chart-container';
+import { TimelineVisualization } from '@/components/timeline/TimelineVisualization';
 import type { TradingPair, KlineInterval } from '@/lib/trading/types';
 
 export default function TradingPage() {
@@ -12,6 +13,32 @@ export default function TradingPage() {
   const [pairs, setPairs] = useState<TradingPair[]>([]);
   const [intervals, setIntervals] = useState<KlineInterval[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timelineEnabled, setTimelineEnabled] = useState(false);
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
+
+  // Auto-update is always enabled when timeline is enabled
+  useEffect(() => {
+    setAutoUpdateEnabled(timelineEnabled);
+  }, [timelineEnabled]);
+
+  // Fetch timeline config on mount
+  useEffect(() => {
+    const fetchTimelineConfig = async () => {
+      try {
+        const response = await fetch('/api/admin/timeline/config');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setTimelineEnabled(data.data.enabled);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching timeline config:', error);
+      }
+    };
+
+    fetchTimelineConfig();
+  }, []);
 
   // Fetch trading pairs and intervals on mount
   useEffect(() => {
@@ -75,12 +102,16 @@ export default function TradingPage() {
         <AdminHeader />
 
         <main className="p-8">
+          {/* Timeline Visualization */}
+          <TimelineVisualization enabled={timelineEnabled} onToggle={setTimelineEnabled} />
+
           {/* Multi-Chart Container */}
           <MultiChartContainer
             pairs={pairs}
             intervals={intervals}
             defaultSymbol={selectedPair}
             defaultInterval={selectedInterval}
+            autoUpdateEnabled={autoUpdateEnabled}
           />
         </main>
       </div>

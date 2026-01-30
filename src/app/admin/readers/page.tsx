@@ -258,6 +258,17 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
     timeout: reader.timeout,
   });
 
+  // Store parameter default values by parameter ID
+  const [paramDefaults, setParamDefaults] = useState<Record<number, string>>(() => {
+    const defaults: Record<number, string> = {};
+    reader.parameters?.forEach((param) => {
+      if (param.defaultValue !== null && param.defaultValue !== undefined) {
+        defaults[param.id] = param.defaultValue;
+      }
+    });
+    return defaults;
+  });
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -267,10 +278,19 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
     setSubmitting(true);
 
     try {
+      // Prepare parameters with their default values
+      const parametersWithDefaults = (reader.parameters || []).map((param) => ({
+        id: param.id,
+        defaultValue: paramDefaults[param.id] || null,
+      }));
+
       const response = await fetch(`/api/readers/${reader.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          parameters: parametersWithDefaults,
+        }),
       });
 
       if (response.ok) {
@@ -338,17 +358,37 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
           </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">Parameters (Read-only)</h3>
+            <h3 className="text-sm font-semibold text-white mb-3">Parameters</h3>
             {reader.parameters && reader.parameters.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {reader.parameters.map((param) => (
-                  <div key={param.id} className="flex items-center gap-2 text-sm">
-                    <span className="rounded bg-gray-700 px-2 py-1 text-xs text-gray-400 font-mono">
-                      {param.paramType}
-                    </span>
-                    <span className="text-gray-300">{param.displayName}</span>
-                    <span className="text-gray-500">{param.paramName}</span>
-                    {param.isRequired && <span className="text-red-400">*</span>}
+                  <div key={param.id} className="rounded-lg bg-gray-800/50 p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="rounded bg-gray-700 px-2 py-1 text-xs text-gray-400 font-mono">
+                        {param.paramType}
+                      </span>
+                      <span className="text-gray-300 font-medium">{param.displayName}</span>
+                      <span className="text-gray-500 text-sm">{param.paramName}</span>
+                      {param.isRequired && <span className="text-red-400">*</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-400 w-24">Default:</label>
+                      <input
+                        type="text"
+                        value={paramDefaults[param.id] || ''}
+                        onChange={(e) =>
+                          setParamDefaults({
+                            ...paramDefaults,
+                            [param.id]: e.target.value,
+                          })
+                        }
+                        placeholder={`No default (uses schema default)`}
+                        className="flex-1 rounded border border-gray-600 bg-gray-700/50 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-sky-500 focus:outline-none"
+                      />
+                    </div>
+                    {param.description && (
+                      <p className="mt-2 text-xs text-gray-500">{param.description}</p>
+                    )}
                   </div>
                 ))}
               </div>

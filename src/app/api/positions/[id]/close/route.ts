@@ -6,6 +6,7 @@ import { binanceClient } from '@/lib/trading/binance-client';
 import { calculateCloseFee, calculatePartialCloseFee } from '@/lib/trading/fee-calculator';
 import { calculateRealizedPnl, calculateNetPnl } from '@/lib/trading/pnl-calculator';
 import type { ClosePositionRequest } from '@/lib/trading/position-types';
+import { getPositionEventDispatcher } from '@/lib/trading/position-events';
 
 /**
  * POST /api/positions/[id]/close
@@ -159,6 +160,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           type: 'full',
         }),
         createdAt: new Date(),
+      });
+
+      // Emit position closed event for SSE (only for full close)
+      getPositionEventDispatcher().emitPositionClosed({
+        positionId: positionId,
+        traderId: positionData.traderId,
+        tradingPairId: positionData.tradingPairId,
+        tradingPairSymbol: tradingPair.symbol,
       });
     }
 

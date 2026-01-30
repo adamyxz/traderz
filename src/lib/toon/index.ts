@@ -163,3 +163,218 @@ export function toTOONTable(arr: Record<string, unknown>[], keyOrder?: string[])
 
   return `[\n  ${items.join('\n  ')}\n]`;
 }
+
+// ============================================================================
+// OPTIMIZATION FUNCTIONS FOR DATA COMPRESSION
+// ============================================================================
+
+/**
+ * Optimization 1: Smart precision - Remove trailing zeros from price strings
+ */
+export function trimPrice(price: string | number): string {
+  const num = typeof price === 'string' ? parseFloat(price) : price;
+  return num.toString();
+}
+
+/**
+ * Optimization 4: Dynamic rounding based on price range and symbol
+ */
+export function smartRoundPrice(price: string | number): string {
+  const num = typeof price === 'string' ? parseFloat(price) : price;
+
+  // Different thresholds for different price ranges
+  if (num < 0.00001) {
+    return num.toFixed(8); // Very small coins (shits/mems)
+  } else if (num < 0.001) {
+    return num.toFixed(6); // Small coins
+  } else if (num < 1) {
+    return num.toFixed(4); // Medium-small coins
+  } else if (num < 10) {
+    return num.toFixed(2); // Medium coins
+  } else {
+    return num.toFixed(1); // Large coins (BTC, ETH)
+  }
+}
+
+/**
+ * Optimization 2: Convert absolute timestamps to relative deltas
+ * Returns base timestamp and array of relative time deltas
+ */
+export function toRelativeTimestamps(
+  records: Record<string, unknown>[],
+  timestampKey: string
+): { baseTime: number; records: Record<string, unknown>[] } {
+  if (records.length === 0) {
+    return { baseTime: 0, records: [] };
+  }
+
+  const baseTime = records[0][timestampKey] as number;
+  const deltaKey = `d${timestampKey}`; // delta key, e.g., dT for timestamp T
+
+  const processedRecords = records.map((record, index) => {
+    const newRecord = { ...record };
+    const currentTimestamp = newRecord[timestampKey] as number;
+    const delta = index === 0 ? 0 : currentTimestamp - baseTime;
+    newRecord[deltaKey] = delta;
+    delete newRecord[timestampKey];
+    return newRecord;
+  });
+
+  return { baseTime, records: processedRecords };
+}
+
+/**
+ * Optimization 3: Compress large numbers by removing redundant digits
+ * For IDs that increment sequentially, store relative to base
+ */
+export function compressLargeNumbers(
+  records: Record<string, unknown>[],
+  key: string
+): { baseValue: number; records: Record<string, unknown>[] } {
+  if (records.length === 0) {
+    return { baseValue: 0, records: [] };
+  }
+
+  const baseValue = records[0][key] as number;
+  const deltaKey = `d${key}`;
+
+  const processedRecords = records.map((record, index) => {
+    const newRecord = { ...record };
+    const currentValue = newRecord[key] as number;
+
+    // If the value is large and sequential, use delta
+    if (currentValue > 1000000 && index < records.length - 1) {
+      newRecord[deltaKey] = currentValue - baseValue;
+      delete newRecord[key];
+    }
+
+    return newRecord;
+  });
+
+  return { baseValue, records: processedRecords };
+}
+
+/**
+ * Optimization 5: Omit fields with default values
+ */
+export function omitDefaultValues(
+  records: Record<string, unknown>[],
+  defaults: Record<string, unknown>
+): Record<string, unknown>[] {
+  return records.map((record) => {
+    const newRecord: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) {
+      const defaultValue = defaults[key];
+      if (value !== defaultValue) {
+        newRecord[key] = value;
+      }
+    }
+    return newRecord;
+  });
+}
+
+/**
+ * Apply all optimizations to trade/agg trade data
+ */
+export function optimizeTradeData(
+  trades: Record<string, unknown>[],
+  options: {
+    timestampKey?: string;
+    idKey?: string;
+    priceKeys?: string[];
+    smartRound?: boolean;
+    symbol?: string;
+  } = {}
+): {
+  baseTime: number;
+  baseId?: number;
+  data: Record<string, unknown>[];
+} {
+  const { timestampKey = 'T', idKey = 'a', priceKeys = ['p'], smartRound = true } = options;
+
+  let processedTrades = [...trades];
+
+  // Opt 1 & 4: Trim and round prices
+  processedTrades = processedTrades.map((trade) => {
+    const newTrade = { ...trade };
+    priceKeys.forEach((key) => {
+      if (key in newTrade) {
+        const priceValue = newTrade[key] as string | number;
+        newTrade[key] = smartRound ? smartRoundPrice(priceValue) : trimPrice(priceValue);
+      }
+    });
+    return newTrade;
+  });
+
+  // Opt 2: Relative timestamps
+  const { baseTime, records: tradesWithRelativeTime } = toRelativeTimestamps(
+    processedTrades,
+    timestampKey
+  );
+  processedTrades = tradesWithRelativeTime;
+
+  // Opt 3: Compress large IDs
+  let baseId: number | undefined;
+  if (idKey && processedTrades.length > 0 && idKey in processedTrades[0]) {
+    const { baseValue, records: tradesWithCompressedIds } = compressLargeNumbers(
+      processedTrades,
+      idKey
+    );
+    baseId = baseValue;
+    processedTrades = tradesWithCompressedIds;
+  }
+
+  // Opt 5: Omit default values (M=false is the default)
+  processedTrades = omitDefaultValues(processedTrades, { M: false });
+
+  return { baseTime, baseId, data: processedTrades };
+}
+
+/**
+ * Apply all optimizations to kline data
+ */
+export function optimizeKlineData(
+  klines: Record<string, unknown>[],
+  options: {
+    startTimeKey?: string;
+    endTimeKey?: string;
+    priceKeys?: string[];
+    smartRound?: boolean;
+    symbol?: string;
+  } = {}
+): {
+  baseTime: number;
+  data: Record<string, unknown>[];
+} {
+  const { startTimeKey = 'ot', priceKeys = ['o', 'h', 'l', 'c'], smartRound = true } = options;
+
+  let processedKlines = [...klines];
+
+  // Opt 1 & 4: Trim and round prices
+  processedKlines = processedKlines.map((kline) => {
+    const newKline = { ...kline };
+    priceKeys.forEach((key) => {
+      if (key in newKline) {
+        const priceValue = newKline[key] as string | number;
+        newKline[key] = smartRound ? smartRoundPrice(priceValue) : trimPrice(priceValue);
+      }
+    });
+    // Also optimize volume fields
+    ['v', 'qv', 'tbv', 'tqv'].forEach((key) => {
+      if (key in newKline) {
+        const value = newKline[key] as string | number;
+        newKline[key] = trimPrice(value);
+      }
+    });
+    return newKline;
+  });
+
+  // Opt 2: Relative timestamps for open time (close time can be derived)
+  const { baseTime, records: klinesWithRelativeTime } = toRelativeTimestamps(
+    processedKlines,
+    startTimeKey
+  );
+  processedKlines = klinesWithRelativeTime;
+
+  return { baseTime, data: processedKlines };
+}
