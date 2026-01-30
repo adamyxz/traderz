@@ -1,0 +1,61 @@
+{
+  "name": "binance-agg-trades",
+  "description": "从币安获取历史聚合成交数据，支持按时间范围或ID范围查询",
+  "parameters": [
+    {
+      "name": "symbol",
+      "type": "string",
+      "displayName": "交易对",
+      "description": "币安交易对符号，如 BTCUSDT",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{2,20}USDT$"
+      }
+    },
+    {
+      "name": "limit",
+      "type": "number",
+      "displayName": "数据条数",
+      "description": "获取的成交记录条数，默认500，最大1000",
+      "required": false,
+      "defaultValue": 500,
+      "validation": {
+        "min": 1,
+        "max": 1000
+      }
+    },
+    {
+      "name": "startTime",
+      "type": "number",
+      "displayName": "开始时间戳",
+      "description": "开始时间的毫秒时间戳",
+      "required": false,
+      "defaultValue": 0,
+      "validation": {
+        "min": 0
+      }
+    },
+    {
+      "name": "endTime",
+      "type": "number",
+      "displayName": "结束时间戳",
+      "description": "结束时间的毫秒时间戳",
+      "required": false,
+      "defaultValue": 0,
+      "validation": {
+        "min": 0
+      }
+    },
+    {
+      "name": "fromId",
+      "type": "number",
+      "displayName": "起始ID",
+      "description": "从哪个成交ID开始获取",
+      "required": false,
+      "defaultValue": 0,
+      "validation": {
+        "min": 0
+      }
+    }
+  ]
+}

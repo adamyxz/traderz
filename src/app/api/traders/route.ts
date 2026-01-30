@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
         maxConsecutiveLosses: body.maxConsecutiveLosses,
         dailyMaxLoss: body.dailyMaxLoss,
         riskPreferenceScore: body.riskPreferenceScore,
-        heartbeatInterval: body.heartbeatInterval,
+        heartbeatInterval: 30, // Default heartbeat interval
         activeTimeStart: body.activeTimeStart,
         activeTimeEnd: body.activeTimeEnd,
         tradingStrategy: body.tradingStrategy,

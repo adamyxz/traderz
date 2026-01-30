@@ -63,7 +63,6 @@ export async function POST(request: NextRequest) {
           !traderConfig.maxConsecutiveLosses ||
           !traderConfig.dailyMaxLoss ||
           !traderConfig.riskPreferenceScore ||
-          !traderConfig.heartbeatInterval ||
           !traderConfig.activeTimeStart ||
           !traderConfig.activeTimeEnd ||
           !traderConfig.tradingStrategy ||
@@ -121,7 +120,7 @@ export async function POST(request: NextRequest) {
             maxConsecutiveLosses: traderConfig.maxConsecutiveLosses,
             dailyMaxLoss: String(traderConfig.dailyMaxLoss),
             riskPreferenceScore: traderConfig.riskPreferenceScore,
-            heartbeatInterval: traderConfig.heartbeatInterval,
+            heartbeatInterval: 30, // Default heartbeat interval
             activeTimeStart: traderConfig.activeTimeStart,
             activeTimeEnd: traderConfig.activeTimeEnd,
             tradingStrategy: traderConfig.tradingStrategy,

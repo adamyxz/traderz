@@ -98,7 +98,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         maxConsecutiveLosses: body.maxConsecutiveLosses,
         dailyMaxLoss: body.dailyMaxLoss,
         riskPreferenceScore: body.riskPreferenceScore,
-        heartbeatInterval: body.heartbeatInterval,
+        // heartbeatInterval: not updated from frontend, keeps existing value
         activeTimeStart: body.activeTimeStart,
         activeTimeEnd: body.activeTimeEnd,
         tradingStrategy: body.tradingStrategy,

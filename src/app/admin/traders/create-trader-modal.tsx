@@ -55,7 +55,6 @@ const defaultFormData: {
   riskPreferenceScore: number;
 
   // 交易行为
-  heartbeatInterval: number;
   activeTimeStart: string;
   activeTimeEnd: string;
   tradingStrategy: 'trend' | 'oscillation' | 'arbitrage' | 'market_making' | 'scalping' | 'swing';
@@ -90,7 +89,6 @@ const defaultFormData: {
   riskPreferenceScore: 5,
 
   // 交易行为
-  heartbeatInterval: 30,
   activeTimeStart: '00:00',
   activeTimeEnd: '23:59',
   tradingStrategy: 'trend',
@@ -549,21 +547,7 @@ export default function CreateTraderModal({ isOpen, onClose, onCreate }: CreateT
               Trading Behavior
             </h3>
             <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-300">
-                  Heartbeat Interval (sec)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={formData.heartbeatInterval}
-                  onChange={(e) =>
-                    setFormData({ ...formData, heartbeatInterval: Number(e.target.value) })
-                  }
-                  className="w-full rounded-md bg-gray-700/50 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
-              </div>
-              <div>
+              <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-300">Active Hours</label>
                 <div className="flex gap-1">
                   <input
@@ -690,48 +674,50 @@ export default function CreateTraderModal({ isOpen, onClose, onCreate }: CreateT
               {/* K线周期勾选 */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-300">
-                  Preferred Kline Intervals
+                  Preferred Kline Intervals (15m+)
                 </label>
                 {loadingIntervals ? (
                   <div className="text-sm text-gray-400 py-2">Loading intervals...</div>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
-                    {klineIntervals.map((interval) => (
-                      <label
-                        key={interval.id}
-                        className={`flex items-center gap-2 rounded-md px-3 py-2 cursor-pointer transition-all ${
-                          formData.preferredKlineIntervalIds.includes(interval.id)
-                            ? 'bg-sky-500/20 border border-sky-500/50'
-                            : 'bg-gray-700/30 border border-gray-600 hover:bg-gray-700/50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={formData.preferredKlineIntervalIds.includes(interval.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData({
-                                ...formData,
-                                preferredKlineIntervalIds: [
-                                  ...formData.preferredKlineIntervalIds,
-                                  interval.id,
-                                ],
-                              });
-                            } else {
-                              setFormData({
-                                ...formData,
-                                preferredKlineIntervalIds:
-                                  formData.preferredKlineIntervalIds.filter(
-                                    (id) => id !== interval.id
-                                  ),
-                              });
-                            }
-                          }}
-                          className="h-3.5 w-3.5 rounded border-gray-500 bg-gray-600 text-sky-500 focus:ring-2 focus:ring-sky-500/20"
-                        />
-                        <span className="text-xs text-white">{interval.label}</span>
-                      </label>
-                    ))}
+                    {klineIntervals
+                      .filter((interval) => interval.seconds >= 900)
+                      .map((interval) => (
+                        <label
+                          key={interval.id}
+                          className={`flex items-center gap-2 rounded-md px-3 py-2 cursor-pointer transition-all ${
+                            formData.preferredKlineIntervalIds.includes(interval.id)
+                              ? 'bg-sky-500/20 border border-sky-500/50'
+                              : 'bg-gray-700/30 border border-gray-600 hover:bg-gray-700/50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.preferredKlineIntervalIds.includes(interval.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData,
+                                  preferredKlineIntervalIds: [
+                                    ...formData.preferredKlineIntervalIds,
+                                    interval.id,
+                                  ],
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  preferredKlineIntervalIds:
+                                    formData.preferredKlineIntervalIds.filter(
+                                      (id) => id !== interval.id
+                                    ),
+                                });
+                              }
+                            }}
+                            className="h-3.5 w-3.5 rounded border-gray-500 bg-gray-600 text-sky-500 focus:ring-2 focus:ring-sky-500/20"
+                          />
+                          <span className="text-xs text-white">{interval.label}</span>
+                        </label>
+                      ))}
                   </div>
                 )}
                 <p className="mt-1.5 text-[10px] text-gray-500">

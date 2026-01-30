@@ -218,7 +218,7 @@ export const selectTradingContextTool = tool(
       klineIntervals: z
         .array(z.string())
         .describe(
-          'Array of 2-4 kline interval codes (e.g., ["1m", "5m", "1h"]) that match the trading style'
+          'Array of 2-4 kline interval codes (e.g., ["15m", "1h", "4h"]) that match the trading style. Only use 15m and above intervals.'
         ),
       reasoning: z
         .string()
@@ -281,7 +281,6 @@ export const createTraderTool = tool(
         .describe('Maximum consecutive losses before pause'),
       dailyMaxLoss: z.number().min(1).describe('Maximum daily loss in USD'),
       riskPreferenceScore: z.number().min(1).max(10).describe('Risk preference score (1-10)'),
-      heartbeatInterval: z.number().min(1).max(300).describe('Heartbeat interval in seconds'),
       activeTimeStart: z
         .string()
         .regex(/^\d{2}:\d{2}$/)

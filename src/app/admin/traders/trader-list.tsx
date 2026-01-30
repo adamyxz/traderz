@@ -135,10 +135,6 @@ export default function TraderList({ traders }: TraderListProps) {
                   {strategyLabels[trader.tradingStrategy]}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">心跳频率</span>
-                <span className="font-medium text-white">{trader.heartbeatInterval}s</span>
-              </div>
             </div>
 
             {/* Actions */}

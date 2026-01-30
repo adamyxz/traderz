@@ -141,3 +141,52 @@ export const systemConfigurations = pgTable('system_configurations', {
 
 export type SystemConfiguration = typeof systemConfigurations.$inferSelect;
 export type NewSystemConfiguration = typeof systemConfigurations.$inferInsert;
+
+// Reader参数类型枚举
+export const readerParamTypeEnum = pgEnum('reader_param_type', [
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'array',
+  'enum',
+]);
+
+// Readers表
+export const readers = pgTable('readers', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+
+  // 脚本信息
+  scriptPath: text('script_path').notNull(),
+  scriptHash: text('script_hash'), // MD5哈希，用于检测变更
+
+  // 执行配置
+  timeout: integer('timeout').default(30000),
+});
+
+export type Reader = typeof readers.$inferSelect;
+export type NewReader = typeof readers.$inferInsert;
+
+// Reader参数表
+export const readerParameters = pgTable('reader_parameters', {
+  id: serial('id').primaryKey(),
+  readerId: integer('reader_id')
+    .notNull()
+    .references(() => readers.id, { onDelete: 'cascade' }),
+
+  paramName: text('param_name').notNull(),
+  paramType: readerParamTypeEnum('param_type').notNull(),
+  displayName: text('display_name').notNull(),
+  description: text('description'),
+  isRequired: boolean('is_required').default(false).notNull(),
+  defaultValue: text('default_value'), // JSON字符串
+  validationRules: text('validation_rules'), // JSON字符串
+  enumValues: text('enum_values'), // JSON数组
+});
+
+export type ReaderParameter = typeof readerParameters.$inferSelect;
+export type NewReaderParameter = typeof readerParameters.$inferInsert;
