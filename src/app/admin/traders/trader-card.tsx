@@ -15,10 +15,10 @@ import {
   ArrowDownRight,
   Coins,
   BarChart3,
-  Database,
   CheckSquare,
   Square,
   Briefcase,
+  Heart,
 } from 'lucide-react';
 import type { Trader } from '@/db/schema';
 
@@ -98,6 +98,7 @@ export default function TraderCard({
   onToggleSelect,
 }: TraderCardProps) {
   const [isActive, setIsActive] = useState(false);
+  const [isHeartbeating, setIsHeartbeating] = useState(false);
 
   // Update active status every minute
   useEffect(() => {
@@ -110,6 +111,30 @@ export default function TraderCard({
 
     return () => clearInterval(interval);
   }, [trader.activeTimeStart, trader.activeTimeEnd]);
+
+  // Handle heartbeat trigger
+  const handleHeartbeat = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsHeartbeating(true);
+
+    try {
+      const response = await fetch(`/api/traders/${trader.id}/heartbeat`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('Heartbeat triggered:', result.data);
+      } else {
+        console.error('Heartbeat failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Heartbeat error:', error);
+    } finally {
+      setIsHeartbeating(false);
+    }
+  };
 
   const status = statusConfig[trader.status];
 
@@ -320,39 +345,61 @@ export default function TraderCard({
               {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
             </button>
 
-            {/* Edit and Delete Buttons */}
-            <div className="flex items-center gap-2">
+            {/* Action Buttons */}
+            <div className="flex items-center gap-1.5">
+              {/* Heartbeat Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleHeartbeat(e);
+                }}
+                disabled={isHeartbeating}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
+                  isHeartbeating
+                    ? 'bg-rose-500/30 text-rose-400 animate-pulse'
+                    : 'bg-gray-700/50 text-gray-400 hover:bg-rose-500/20 hover:text-rose-400'
+                }`}
+                title={isHeartbeating ? 'Heartbeat running...' : 'Trigger AI Heartbeat'}
+              >
+                <Heart className={`h-4 w-4 ${isHeartbeating ? 'animate-pulse' : ''}`} />
+              </button>
+
+              {/* Positions Button */}
               {onViewPositions && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onViewPositions();
                   }}
-                  className="flex h-7 items-center gap-1.5 rounded bg-purple-500/20 px-3 text-purple-400 hover:bg-purple-500/30 transition-colors text-[10px] font-medium"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-700/50 text-gray-400 transition-all hover:bg-purple-500/20 hover:text-purple-400"
+                  title="View Positions"
                 >
-                  <Briefcase className="h-3 w-3" />
-                  Positions
+                  <Briefcase className="h-4 w-4" />
                 </button>
               )}
+
+              {/* Edit Button */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit();
                 }}
-                className="flex h-7 items-center gap-1.5 rounded bg-sky-500/20 px-3 text-sky-400 hover:bg-sky-500/30 transition-colors text-[10px] font-medium"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-700/50 text-gray-400 transition-all hover:bg-sky-500/20 hover:text-sky-400"
+                title="Edit Trader"
               >
-                <Edit className="h-3 w-3" />
-                Edit
+                <Edit className="h-4 w-4" />
               </button>
+
+              {/* Delete Button */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="flex h-7 items-center gap-1.5 rounded bg-red-500/20 px-3 text-red-400 hover:bg-red-500/30 transition-colors text-[10px] font-medium"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-700/50 text-gray-400 transition-all hover:bg-red-500/20 hover:text-red-400"
+                title="Delete Trader"
               >
-                <Trash2 className="h-3 w-3" />
-                Delete
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
           </div>

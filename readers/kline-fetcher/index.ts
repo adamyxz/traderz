@@ -1,57 +1,54 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
+import { toTOONTable } from '@/lib/toon';
+import metadataJson from './metadata.json';
 import { z } from 'zod';
 
 // 输入验证
+const intervalEnum = z.enum([
+  '1s',
+  '1m',
+  '3m',
+  '5m',
+  '15m',
+  '30m',
+  '1h',
+  '2h',
+  '4h',
+  '6h',
+  '8h',
+  '12h',
+  '1d',
+  '3d',
+  '1w',
+  '1M',
+]);
+
 const InputSchema = z.object({
   symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, {
     message: '交易对格式错误，应为 BTCUSDT 格式',
   }),
-  interval: z.enum(
-    [
-      '1s',
-      '1m',
-      '3m',
-      '5m',
-      '15m',
-      '30m',
-      '1h',
-      '2h',
-      '4h',
-      '6h',
-      '8h',
-      '12h',
-      '1d',
-      '3d',
-      '1w',
-      '1M',
-    ],
-    {
-      errorMap: () => ({
-        message:
-          '周期必须是 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M 之一',
-      }),
-    }
-  ),
+  interval: intervalEnum,
   limit: z.number().int().min(1).max(1000).default(100),
   endTime: z.number().int().min(0).default(0),
 });
 
-// K线数据类型
+// K线数据类型 (使用短属性名)
 interface KlineTick {
-  openTime: number;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
-  closeTime: number;
-  quoteVolume: string;
-  trades: number;
-  takerBuyBaseVolume: string;
-  takerBuyQuoteVolume: string;
+  ot: number; // openTime
+  o: string; // open
+  h: string; // high
+  l: string; // low
+  c: string; // close
+  v: string; // volume
+  ct: number; // closeTime
+  qv: string; // quoteVolume
+  n: number; // trades
+  tbv: string; // takerBuyBaseVolume
+  tqv: string; // takerBuyQuoteVolume
 }
 
 // 执行函数
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function execute(input: ReaderInput, _context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
 
@@ -90,28 +87,43 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     const rawData = await response.json();
 
-    // 解析K线数据
+    // 解析K线数据为紧凑格式
     // 币安返回格式: [openTime, open, high, low, close, volume, closeTime, quoteVolume, trades, takerBuyBaseVolume, takerBuyQuoteVolume]
     const klines: KlineTick[] = rawData.map((tick: (string | number)[]) => ({
-      openTime: tick[0],
-      open: tick[1],
-      high: tick[2],
-      low: tick[3],
-      close: tick[4],
-      volume: tick[5],
-      closeTime: tick[6],
-      quoteVolume: tick[7],
-      trades: tick[8],
-      takerBuyBaseVolume: tick[9],
-      takerBuyQuoteVolume: tick[10],
+      ot: tick[0],
+      o: tick[1],
+      h: tick[2],
+      l: tick[3],
+      c: tick[4],
+      v: tick[5],
+      ct: tick[6],
+      qv: tick[7],
+      n: tick[8],
+      tbv: tick[9],
+      tqv: tick[10],
     }));
 
+    // 使用 TOON 格式输出 (压缩上下文)
+    const toonData = toTOONTable(klines as unknown as Record<string, unknown>[], [
+      'ot',
+      'o',
+      'h',
+      'l',
+      'c',
+      'v',
+      'ct',
+      'qv',
+      'n',
+      'tbv',
+      'tqv',
+    ]);
+
     const result = {
-      symbol,
-      interval,
-      klines,
-      count: klines.length,
-      fetchedAt: new Date().toISOString(),
+      s: symbol,
+      i: interval,
+      d: toonData,
+      cnt: klines.length,
+      fa: new Date().toISOString(),
     };
 
     return {
@@ -142,7 +154,7 @@ function validate(input: ReaderInput) {
     if (error instanceof z.ZodError) {
       return {
         valid: false,
-        errors: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`),
+        errors: error.issues.map((e) => `${e.path.join('.')}: ${e.message}`),
       };
     }
     return { valid: false, errors: ['Validation failed'] };
@@ -151,6 +163,7 @@ function validate(input: ReaderInput) {
 
 // 导出模块
 const readerModule: ReaderModule = {
+  metadata: metadataJson as ReaderModule['metadata'],
   execute,
   validate,
 };

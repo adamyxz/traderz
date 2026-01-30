@@ -36,6 +36,15 @@ export interface DeepSeekCallEvent {
     duration?: number;
     tokensUsed?: number;
     reasoningContent?: string;
+    // Heartbeat-specific metadata
+    source?: string;
+    heartbeatId?: number;
+    traderId?: number;
+    traderName?: string;
+    interval?: string;
+    readerCount?: number;
+    intervalCount?: number;
+    [key: string]: unknown;
   };
 }
 

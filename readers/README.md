@@ -2,6 +2,99 @@
 
 本文档说明如何创建和管理 Traderz 系统中的 Reader。
 
+## 🎯 TOON 格式要求
+
+**重要**: 所有 Reader 必须统一输出 **TOON (Token-Oriented Object Notation)** 格式，以压缩 LLM 上下文消耗。
+
+### 什么是 TOON 格式？
+
+TOON 是一种专为 LLM 优化的紧凑数据表示格式，通过以下方式减少 token 使用：
+
+- 使用短属性名（如 `s` 代替 `symbol`，`p` 代替 `price`）
+- 移除不必要的引号和空格
+- 使用紧凑的数组表示
+- 表格数据使用紧凑表格格式
+
+### TOON 格式示例
+
+**普通 JSON (约 150 tokens):**
+
+```json
+{
+  "symbol": "BTCUSDT",
+  "aggTrades": [
+    {
+      "aggTradeId": 123456789,
+      "price": "50000.50",
+      "quantity": "0.5",
+      "timestamp": 1234567890000,
+      "isBuyerMaker": true
+    }
+  ],
+  "count": 1
+}
+```
+
+**TOON 格式 (约 80 tokens):**
+
+```
+s=BTCUSDT
+d=[
+  {a=123456789,T=1234567890000,p="50000.50",q="0.5",m=true}
+]
+cnt=1
+```
+
+### 实现要求
+
+1. **导入 TOON 工具**:
+
+```typescript
+import { toTOONTable } from '@/lib/toon';
+```
+
+2. **使用短属性名定义接口**:
+
+```typescript
+interface AggTrade {
+  a: number; // aggTradeId
+  p: string; // price
+  q: string; // quantity
+  T: number; // timestamp
+  m: boolean; // isBuyerMaker
+}
+```
+
+3. **使用 toTOONTable 格式化数组数据**:
+
+```typescript
+const toonData = toTOONTable(aggTrades, ['a', 'T', 'p', 'q', 'm']);
+const result = {
+  s: symbol, // 短属性名
+  d: toonData, // TOON 格式数据
+  cnt: aggTrades.length,
+  fa: new Date().toISOString(),
+};
+```
+
+### 常用短属性名映射
+
+| 完整名称     | 短名称        |
+| ------------ | ------------- |
+| symbol       | s             |
+| price        | p             |
+| quantity     | q             |
+| timestamp    | t, T          |
+| open/ot      | open/openTime |
+| high/h       | high          |
+| low/l        | low           |
+| close/c      | close         |
+| volume/v     | volume        |
+| count/cnt    | count         |
+| interval/i   | interval      |
+| data/d       | data          |
+| fetchedAt/fa | fetchedAt     |
+
 ## 📁 目录结构
 
 ```
@@ -238,10 +331,11 @@ interface ReaderOutput<T = unknown> {
 }
 ```
 
-### index.ts
+### index.ts (使用 TOON 格式)
 
 ```typescript
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
+import { toTOONTable } from '@/lib/toon';
 import { z } from 'zod';
 
 // 输入验证
@@ -255,6 +349,16 @@ const InputSchema = z.object({
   limit: z.number().min(1).max(1000).default(100),
 });
 
+// 使用短属性名定义数据接口（TOON 格式）
+interface KlineTick {
+  t: number; // time
+  o: number; // open
+  h: number; // high
+  l: number; // low
+  c: number; // close
+  v: number; // volume
+}
+
 // 执行函数
 async function execute(input: any, context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
@@ -265,23 +369,30 @@ async function execute(input: any, context: ReaderContext): Promise<ReaderOutput
 
     console.log(`[Reader] Fetching ${symbol} ${interval} data, limit: ${limit}`);
 
-    // 模拟获取数据
-    const mockData = {
-      symbol,
-      interval,
-      ticks: Array.from({ length: limit }, (_, i) => ({
-        time: Date.now() - (limit - i) * 60000,
-        open: 50000 + Math.random() * 1000,
-        high: 51000 + Math.random() * 1000,
-        low: 49000 + Math.random() * 1000,
-        close: 50000 + Math.random() * 1000,
-        volume: Math.random() * 1000,
-      })),
+    // 模拟获取数据（使用短属性名）
+    const ticks: KlineTick[] = Array.from({ length: limit }, (_, i) => ({
+      t: Date.now() - (limit - i) * 60000,
+      o: 50000 + Math.random() * 1000,
+      h: 51000 + Math.random() * 1000,
+      l: 49000 + Math.random() * 1000,
+      c: 50000 + Math.random() * 1000,
+      v: Math.random() * 1000,
+    }));
+
+    // 使用 TOON 格式化数据
+    const toonData = toTOONTable(ticks, ['t', 'o', 'h', 'l', 'c', 'v']);
+
+    const result = {
+      s: symbol, // 短属性名
+      i: interval, // 短属性名
+      d: toonData, // TOON 格式数据
+      cnt: ticks.length,
+      fa: new Date().toISOString(),
     };
 
     return {
       success: true,
-      data: mockData,
+      data: result,
       metadata: {
         executionTime: Date.now() - startTime,
         timestamp: new Date().toISOString(),
@@ -319,6 +430,48 @@ const readerModule: ReaderModule = {
 };
 
 export default readerModule;
+```
+
+### 输出对比
+
+**JSON 格式 (约 200 tokens):**
+
+```json
+{
+  "symbol": "BTCUSDT",
+  "interval": "1h",
+  "ticks": [
+    {
+      "time": 1234567890,
+      "open": 50000,
+      "high": 51000,
+      "low": 49000,
+      "close": 50500,
+      "volume": 100
+    },
+    {
+      "time": 1234571490,
+      "open": 50500,
+      "high": 51500,
+      "low": 50000,
+      "close": 51000,
+      "volume": 150
+    }
+  ],
+  "count": 2
+}
+```
+
+**TOON 格式 (约 100 tokens):**
+
+```
+s=BTCUSDT
+i=1h
+d=[
+  {t=1234567890,o=50000,h=51000,l=49000,c=50500,v=100}
+  {t=1234571490,o=50500,h=51500,l=50000,c=51000,v=150}
+]
+cnt=2
 ```
 
 ## 🚀 部署流程
@@ -359,7 +512,40 @@ interface ReaderModule {
 
 ## 💡 提示
 
+- **必须使用 TOON 格式输出** 以压缩上下文
 - 使用 TypeScript 的类型检查来避免错误
 - 在开发时使用 `console.log` 调试，生产环境会自动记录
 - 保持 Reader 简单和专注，每个 Reader 只做一件事
 - 复杂的业务逻辑应该放在服务层，Reader 只是调用入口
+- 定义接口时直接使用短属性名，避免重复映射
+
+## 📦 TOON 工具函数
+
+```typescript
+// src/lib/toon/index.ts 提供以下工具:
+
+// 将对象转换为 TOON 格式
+toTOON(obj: ToonValue, indent?: number): string
+
+// 将对象数组转换为 TOON 表格格式（推荐用于列表数据）
+toTOONTable(arr: ToonObject[], keyOrder?: string[]): string
+
+// 创建自定义短键映射的格式化器
+createTOONFormatter(customShortKeys: Record<string, string>)
+```
+
+## 🔄 迁移现有 Reader
+
+如果需要将现有 JSON 输出的 Reader 迁移到 TOON 格式：
+
+1. 导入 `toTOONTable` 或 `toTOON`
+2. 修改接口定义，使用短属性名
+3. 使用 `toTOONTable` 格式化数组数据
+4. 更新返回对象的属性名使用短名称
+5. 测试确保输出格式正确
+
+## ⚡ 性能考虑
+
+- TOON 格式通常可减少 **40-60%** 的 token 使用
+- 对于大量数据（如 100+ 条记录），效果更明显
+- 格式化开销可忽略不计，主要节省在 LLM API 调用成本

@@ -235,7 +235,31 @@ export function EventLog({ events }: EventLogProps) {
                     )}
 
                     {/* Metadata footer */}
-                    <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-700 text-xs text-gray-500">
+                    <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-700 text-xs text-gray-500 flex-wrap">
+                      {event.metadata?.source && (
+                        <span className="text-blue-400">📍 {event.metadata.source}</span>
+                      )}
+                      {event.metadata?.traderName && (
+                        <span className="text-purple-400">👤 {event.metadata.traderName}</span>
+                      )}
+                      {event.metadata?.heartbeatId && (
+                        <span className="text-amber-400">
+                          💓 Heartbeat #{event.metadata.heartbeatId}
+                        </span>
+                      )}
+                      {event.metadata?.interval && (
+                        <span className="text-green-400">📊 {event.metadata.interval}</span>
+                      )}
+                      {event.metadata?.readerCount && (
+                        <span className="text-cyan-400">
+                          📖 {event.metadata.readerCount} readers
+                        </span>
+                      )}
+                      {event.metadata?.intervalCount && (
+                        <span className="text-cyan-400">
+                          📈 {event.metadata.intervalCount} intervals
+                        </span>
+                      )}
                       {event.metadata?.duration && (
                         <span>⏱ {formatDuration(event.metadata.duration)}</span>
                       )}

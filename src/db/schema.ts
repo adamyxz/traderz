@@ -230,6 +230,18 @@ export const historyActionEnum = pgEnum('history_action', [
   'take_profit_triggered',
   'margin_added',
   'margin_removed',
+  'modify_sl_tp',
+]);
+
+// Heartbeat状态枚举
+export const heartbeatStatusEnum = pgEnum('heartbeat_status', [
+  'pending',
+  'in_progress',
+  'completed',
+  'failed',
+  'skipped_outside_hours',
+  'skipped_no_intervals',
+  'skipped_no_readers',
 ]);
 
 // 仓位表
@@ -351,3 +363,41 @@ export const priceCache = pgTable(
 
 export type PriceCache = typeof priceCache.$inferSelect;
 export type NewPriceCache = typeof priceCache.$inferInsert;
+
+// 心跳历史记录表
+export const heartbeatHistory = pgTable(
+  'heartbeat_history',
+  {
+    id: serial('id').primaryKey(),
+    traderId: integer('trader_id')
+      .notNull()
+      .references(() => traders.id, { onDelete: 'cascade' }),
+
+    status: heartbeatStatusEnum('status').notNull(),
+
+    triggeredAt: timestamp('triggered_at').defaultNow().notNull(),
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    duration: integer('duration'), // 执行时长（毫秒）
+
+    wasWithinActiveHours: boolean('was_within_active_hours').default(true).notNull(),
+
+    microDecisions: text('micro_decisions'), // JSON array - 各时间微决策
+    finalDecision: text('final_decision'), // JSON object - 综合决策
+
+    executionAction: text('execution_action'), // 执行的操作类型
+    executionResult: text('execution_result'), // JSON object - 执行结果
+
+    readersExecuted: text('readers_executed'), // JSON array - Reader执行记录
+    errorMessage: text('error_message'),
+    metadata: text('metadata'), // JSON object - 额外元数据
+  },
+  (table) => ({
+    traderIdx: index('heartbeat_history_trader_idx').on(table.traderId),
+    statusIdx: index('heartbeat_history_status_idx').on(table.status),
+    triggeredAtIdx: index('heartbeat_history_triggered_at_idx').on(table.triggeredAt),
+  })
+);
+
+export type HeartbeatHistory = typeof heartbeatHistory.$inferSelect;
+export type NewHeartbeatHistory = typeof heartbeatHistory.$inferInsert;

@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import { DeepSeekLangChainClient } from './core';
 import type { DeepSeekChatConfig, StreamChunk, ChatOptions } from './types';
 import { eventBus } from './events';
+import type { CallType } from './monitor-types';
 
 /**
  * Chat mode client for DeepSeek
@@ -338,6 +339,14 @@ export class DeepSeekChatClient extends DeepSeekLangChainClient {
     schema: T
   ): {
     invoke: (prompt: string, systemPrompt?: string) => Promise<z.infer<T>>;
+    invokeWithOptions: (
+      prompt: string,
+      systemPrompt: string | undefined,
+      options: {
+        metadata?: Record<string, unknown>;
+        callType?: CallType;
+      }
+    ) => Promise<z.infer<T>>;
   } {
     const model = this.getModel();
 
@@ -348,14 +357,91 @@ export class DeepSeekChatClient extends DeepSeekLangChainClient {
       invoke: async (prompt: string, systemPrompt?: string): Promise<z.infer<T>> => {
         this.validateApiKey();
 
-        const messages = systemPrompt
-          ? [new SystemMessage(systemPrompt), new HumanMessage(prompt)]
-          : [new HumanMessage(prompt)];
+        const startTime = Date.now();
+        const { eventId } = eventBus.emitCallStarted({
+          modelType: this.modelType,
+          callType: 'chat',
+          systemPrompt,
+          userPrompt: prompt,
+          temperature: this.temperature,
+          maxTokens: this.maxTokens,
+        });
 
-        const result = await structuredModel.invoke(messages);
+        try {
+          const messages = systemPrompt
+            ? [new SystemMessage(systemPrompt), new HumanMessage(prompt)]
+            : [new HumanMessage(prompt)];
 
-        // The result is already parsed by LangChain
-        return result as z.infer<T>;
+          const result = await structuredModel.invoke(messages);
+          const duration = Date.now() - startTime;
+
+          // Emit completion event
+          eventBus.emitCallCompleted({
+            eventId,
+            duration,
+            timestamp: Date.now(),
+            content: JSON.stringify(result, null, 2),
+          });
+
+          // The result is already parsed by LangChain
+          return result as z.infer<T>;
+        } catch (error) {
+          eventBus.emitCallError({
+            eventId,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: Date.now(),
+          });
+          throw error;
+        }
+      },
+
+      invokeWithOptions: async (
+        prompt: string,
+        systemPrompt: string | undefined,
+        options: {
+          metadata?: Record<string, unknown>;
+          callType?: CallType;
+        } = {}
+      ): Promise<z.infer<T>> => {
+        this.validateApiKey();
+
+        const startTime = Date.now();
+        const { eventId } = eventBus.emitCallStarted({
+          modelType: this.modelType,
+          callType: options.callType || 'chat',
+          systemPrompt,
+          userPrompt: prompt,
+          temperature: this.temperature,
+          maxTokens: this.maxTokens,
+        });
+
+        try {
+          const messages = systemPrompt
+            ? [new SystemMessage(systemPrompt), new HumanMessage(prompt)]
+            : [new HumanMessage(prompt)];
+
+          const result = await structuredModel.invoke(messages);
+          const duration = Date.now() - startTime;
+
+          // Emit completion event with metadata
+          eventBus.emitCallCompleted({
+            eventId,
+            duration,
+            timestamp: Date.now(),
+            content: JSON.stringify(result, null, 2),
+            metadata: options.metadata,
+          });
+
+          // The result is already parsed by LangChain
+          return result as z.infer<T>;
+        } catch (error) {
+          eventBus.emitCallError({
+            eventId,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: Date.now(),
+          });
+          throw error;
+        }
       },
     };
   }

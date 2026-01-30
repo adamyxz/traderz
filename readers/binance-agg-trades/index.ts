@@ -1,4 +1,6 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
+import { toTOONTable } from '@/lib/toon';
+import metadataJson from './metadata.json';
 import { z } from 'zod';
 
 // 输入验证
@@ -14,17 +16,18 @@ const InputSchema = z.object({
 
 // 聚合成交数据类型
 interface AggTrade {
-  aggTradeId: number; // 聚合交易ID
-  price: string; // 成交价格
-  quantity: string; // 成交数量
-  firstTradeId: number; // 第一个交易ID
-  lastTradeId: number; // 最后一个交易ID
-  timestamp: number; // 成交时间戳
-  isBuyerMaker: boolean; // 是否为买方做市商
-  wasIgnored: boolean; // 是否被忽略
+  a: number; // 聚合交易ID (aggTradeId)
+  p: string; // 成交价格 (price)
+  q: string; // 成交数量 (quantity)
+  f: number; // 第一个交易ID (firstTradeId)
+  l: number; // 最后一个交易ID (lastTradeId)
+  T: number; // 成交时间戳 (timestamp)
+  m: boolean; // 是否为买方做市商 (isBuyerMaker)
+  M: boolean; // 是否被忽略 (wasIgnored)
 }
 
 // 执行函数
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function execute(input: ReaderInput, _context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
 
@@ -71,7 +74,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     const rawData = await response.json();
 
-    // 解析聚合成交数据
+    // 解析聚合成交数据为紧凑格式
     // 币安返回格式: { a: aggTradeId, p: price, q: quantity, f: firstTradeId, l: lastTradeId, T: timestamp, m: isBuyerMaker, M: wasIgnored }
     const aggTrades: AggTrade[] = rawData.map(
       (tick: {
@@ -84,22 +87,34 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
         m: boolean;
         M?: boolean;
       }) => ({
-        aggTradeId: tick.a,
-        price: tick.p,
-        quantity: tick.q,
-        firstTradeId: tick.f,
-        lastTradeId: tick.l,
-        timestamp: tick.T,
-        isBuyerMaker: tick.m,
-        wasIgnored: tick.M || false,
+        a: tick.a,
+        p: tick.p,
+        q: tick.q,
+        f: tick.f,
+        l: tick.l,
+        T: tick.T,
+        m: tick.m,
+        M: tick.M || false,
       })
     );
 
+    // 使用 TOON 格式输出 (压缩上下文)
+    const toonData = toTOONTable(aggTrades as unknown as Record<string, unknown>[], [
+      'a',
+      'T',
+      'p',
+      'q',
+      'f',
+      'l',
+      'm',
+      'M',
+    ]);
+
     const result = {
-      symbol,
-      aggTrades,
-      count: aggTrades.length,
-      fetchedAt: new Date().toISOString(),
+      s: symbol,
+      d: toonData,
+      cnt: aggTrades.length,
+      fa: new Date().toISOString(),
     };
 
     return {
@@ -130,7 +145,7 @@ function validate(input: ReaderInput) {
     if (error instanceof z.ZodError) {
       return {
         valid: false,
-        errors: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`),
+        errors: error.issues.map((e) => `${e.path.join('.')}: ${e.message}`),
       };
     }
     return { valid: false, errors: ['Validation failed'] };
@@ -139,6 +154,7 @@ function validate(input: ReaderInput) {
 
 // 导出模块
 const readerModule: ReaderModule = {
+  metadata: metadataJson as ReaderModule['metadata'],
   execute,
   validate,
 };
