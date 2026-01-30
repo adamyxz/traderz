@@ -5,6 +5,8 @@ import {
   tradingPairs,
   klineIntervals,
   traderKlineIntervals,
+  readers,
+  traderReaders,
   type Trader,
 } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
@@ -13,6 +15,7 @@ import { eq, inArray } from 'drizzle-orm';
 export interface TraderWithRelations extends Trader {
   preferredTradingPair?: typeof tradingPairs.$inferSelect;
   preferredKlineIntervals?: (typeof klineIntervals.$inferSelect)[];
+  readers?: (typeof readers.$inferSelect)[];
 }
 
 // GET /api/traders/[id] - 获取单个交易员（包含关联数据）
@@ -39,20 +42,39 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       : [undefined];
 
     // 获取关联的K线周期
-    const relations = await db
+    const intervalRelations = await db
       .select()
       .from(traderKlineIntervals)
       .where(eq(traderKlineIntervals.traderId, trader.id));
 
     const preferredIntervals =
-      relations.length > 0
+      intervalRelations.length > 0
         ? await db
             .select()
             .from(klineIntervals)
             .where(
               inArray(
                 klineIntervals.id,
-                relations.map((r) => r.klineIntervalId)
+                intervalRelations.map((r) => r.klineIntervalId)
+              )
+            )
+        : [];
+
+    // 获取关联的Readers
+    const readerRelations = await db
+      .select()
+      .from(traderReaders)
+      .where(eq(traderReaders.traderId, trader.id));
+
+    const traderReadersList =
+      readerRelations.length > 0
+        ? await db
+            .select()
+            .from(readers)
+            .where(
+              inArray(
+                readers.id,
+                readerRelations.map((r) => r.readerId)
               )
             )
         : [];
@@ -61,6 +83,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ...trader,
       preferredTradingPair: preferredPair,
       preferredKlineIntervals: preferredIntervals,
+      readers: traderReadersList,
     };
 
     return NextResponse.json(traderWithRelations);
@@ -128,6 +151,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
+    // 更新Reader关联
+    await db.delete(traderReaders).where(eq(traderReaders.traderId, Number(id)));
+
+    if (body.preferredReaderIds && Array.isArray(body.preferredReaderIds)) {
+      const readerRelations = body.preferredReaderIds
+        .filter((readerId: number) => readerId != null)
+        .map((readerId: number) => ({
+          traderId: Number(id),
+          readerId,
+        }));
+
+      if (readerRelations.length > 0) {
+        await db.insert(traderReaders).values(readerRelations);
+      }
+    }
+
     // 获取完整的交易员数据（包含关联）
     const [preferredPair] = body.preferredTradingPairId
       ? await db.select().from(tradingPairs).where(eq(tradingPairs.id, body.preferredTradingPairId))
@@ -144,10 +183,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ? await db.select().from(klineIntervals).where(inArray(klineIntervals.id, intervalIds))
         : [];
 
+    const readerRelations = await db
+      .select()
+      .from(traderReaders)
+      .where(eq(traderReaders.traderId, Number(id)));
+
+    const readerIds = readerRelations.map((r) => r.readerId);
+    const traderReadersList =
+      readerIds.length > 0
+        ? await db.select().from(readers).where(inArray(readers.id, readerIds))
+        : [];
+
     const traderWithRelations: TraderWithRelations = {
       ...updatedTrader[0],
       preferredTradingPair: preferredPair,
       preferredKlineIntervals: preferredIntervals,
+      readers: traderReadersList,
     };
 
     return NextResponse.json(traderWithRelations);
@@ -167,6 +218,9 @@ export async function DELETE(
 
     // 先删除关联的K线周期关系
     await db.delete(traderKlineIntervals).where(eq(traderKlineIntervals.traderId, Number(id)));
+
+    // 删除关联的Reader关系
+    await db.delete(traderReaders).where(eq(traderReaders.traderId, Number(id)));
 
     // 删除交易员
     const deletedTrader = await db

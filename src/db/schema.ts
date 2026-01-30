@@ -190,3 +190,164 @@ export const readerParameters = pgTable('reader_parameters', {
 
 export type ReaderParameter = typeof readerParameters.$inferSelect;
 export type NewReaderParameter = typeof readerParameters.$inferInsert;
+
+// 交易员与Reader多对多关联表
+export const traderReaders = pgTable(
+  'trader_readers',
+  {
+    traderId: integer('trader_id')
+      .notNull()
+      .references(() => traders.id, { onDelete: 'cascade' }),
+    readerId: integer('reader_id')
+      .notNull()
+      .references(() => readers.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.traderId, table.readerId] }),
+    traderIdx: index('trader_readers_trader_idx').on(table.traderId),
+    readerIdx: index('trader_readers_reader_idx').on(table.readerId),
+  })
+);
+
+export type TraderReader = typeof traderReaders.$inferSelect;
+export type NewTraderReader = typeof traderReaders.$inferInsert;
+
+// ==================== 仓位模型系统 ====================
+
+// 仓位方向枚举
+export const positionSideEnum = pgEnum('position_side', ['long', 'short']);
+
+// 仓位状态枚举
+export const positionStatusEnum = pgEnum('position_status', ['open', 'closed', 'liquidated']);
+
+// 历史记录操作类型枚举
+export const historyActionEnum = pgEnum('history_action', [
+  'open',
+  'close',
+  'liquidate',
+  'price_update',
+  'stop_loss_triggered',
+  'take_profit_triggered',
+  'margin_added',
+  'margin_removed',
+]);
+
+// 仓位表
+export const positions = pgTable(
+  'positions',
+  {
+    // 基础信息
+    id: serial('id').primaryKey(),
+    traderId: integer('trader_id')
+      .notNull()
+      .references(() => traders.id, { onDelete: 'cascade' }),
+    tradingPairId: integer('trading_pair_id')
+      .notNull()
+      .references(() => tradingPairs.id, { onDelete: 'restrict' }),
+
+    // 仓位方向和状态
+    side: positionSideEnum('side').notNull(),
+    status: positionStatusEnum('status').default('open').notNull(),
+
+    // 价格信息
+    entryPrice: numeric('entry_price', { precision: 20, scale: 8 }).notNull(), // 开仓价
+    currentPrice: numeric('current_price', { precision: 20, scale: 8 }).notNull(), // 当前价
+
+    // 仓位参数
+    leverage: numeric('leverage', { precision: 5, scale: 2 }).notNull(), // 杠杆倍数
+    quantity: numeric('quantity', { precision: 20, scale: 8 }).notNull(), // 数量（基础货币）
+    positionSize: numeric('position_size', { precision: 20, scale: 8 }).notNull(), // 仓位大小（USDT）
+    margin: numeric('margin', { precision: 20, scale: 8 }).notNull(), // 保证金（USDT）
+
+    // 费用和盈亏
+    openFee: numeric('open_fee', { precision: 20, scale: 8 }).notNull().default('0'), // 开仓手续费
+    closeFee: numeric('close_fee', { precision: 20, scale: 8 }).notNull().default('0'), // 平仓手续费
+    unrealizedPnl: numeric('unrealized_pnl', { precision: 20, scale: 8 }).notNull().default('0'), // 未实现盈亏
+    realizedPnl: numeric('realized_pnl', { precision: 20, scale: 8 }).notNull().default('0'), // 已实现盈亏
+
+    // 止盈止损
+    stopLossPrice: numeric('stop_loss_price', { precision: 20, scale: 8 }), // 止损价
+    takeProfitPrice: numeric('take_profit_price', { precision: 20, scale: 8 }), // 止盈价
+
+    // 时间戳
+    openedAt: timestamp('opened_at').defaultNow().notNull(),
+    closedAt: timestamp('closed_at'),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    traderIdx: index('positions_trader_idx').on(table.traderId),
+    tradingPairIdx: index('positions_trading_pair_idx').on(table.tradingPairId),
+    statusIdx: index('positions_status_idx').on(table.status),
+    openedAtIdx: index('positions_opened_at_idx').on(table.openedAt),
+    // 组合索引：查询某交易员的持仓
+    traderStatusIdx: index('positions_trader_status_idx').on(table.traderId, table.status),
+  })
+);
+
+export type Position = typeof positions.$inferSelect;
+export type NewPosition = typeof positions.$inferInsert;
+
+// 仓位历史记录表
+export const positionHistory = pgTable(
+  'position_history',
+  {
+    id: serial('id').primaryKey(),
+    positionId: integer('position_id')
+      .notNull()
+      .references(() => positions.id, { onDelete: 'cascade' }),
+
+    // 操作信息
+    action: historyActionEnum('action').notNull(),
+    price: numeric('price', { precision: 20, scale: 8 }), // 操作时的价格
+    quantity: numeric('quantity', { precision: 20, scale: 8 }), // 操作的数量
+
+    // 盈亏和费用
+    pnl: numeric('pnl', { precision: 20, scale: 8 }), // 盈亏
+    fee: numeric('fee', { precision: 20, scale: 8 }), // 手续费
+
+    // 额外信息（JSON格式）
+    metadata: text('metadata'), // 存储额外信息，如触发原因等
+
+    // 时间戳
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    positionIdx: index('position_history_position_idx').on(table.positionId),
+    actionIdx: index('position_history_action_idx').on(table.action),
+    createdAtIdx: index('position_history_created_at_idx').on(table.createdAt),
+    // 组合索引：查询某仓位的历史记录
+    positionCreatedAtIdx: index('position_history_position_created_idx').on(
+      table.positionId,
+      table.createdAt
+    ),
+  })
+);
+
+export type PositionHistory = typeof positionHistory.$inferSelect;
+export type NewPositionHistory = typeof positionHistory.$inferInsert;
+
+// 价格缓存表
+export const priceCache = pgTable(
+  'price_cache',
+  {
+    id: serial('id').primaryKey(),
+    tradingPairId: integer('trading_pair_id')
+      .notNull()
+      .references(() => tradingPairs.id, { onDelete: 'cascade' })
+      .unique(),
+
+    // 价格信息
+    price: numeric('price', { precision: 20, scale: 8 }).notNull(), // 当前价格
+    priceChange24h: numeric('price_change_24h', { precision: 20, scale: 8 }), // 24小时价格变化
+    priceChangePercent24h: numeric('price_change_percent_24h', { precision: 10, scale: 4 }), // 24小时价格变化百分比
+
+    // 时间戳
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    updatedAtIdx: index('price_cache_updated_at_idx').on(table.updatedAt),
+  })
+);
+
+export type PriceCache = typeof priceCache.$inferSelect;
+export type NewPriceCache = typeof priceCache.$inferInsert;

@@ -294,6 +294,42 @@ export const createTraderTool = tool(
 );
 
 /**
+ * Select readers tool
+ * Selects appropriate readers for a trader based on its strategy and configuration
+ */
+export const selectReadersTool = tool(
+  async (args) => {
+    // This tool returns the selected readers for validation
+    return JSON.stringify(
+      {
+        success: true,
+        message: 'Readers selected successfully',
+        selection: args,
+      },
+      null,
+      2
+    );
+  },
+  {
+    name: 'select_readers',
+    description:
+      'Select appropriate data readers for a trader based on its trading strategy, selected trading pair, kline intervals, and configuration. Readers provide external data that the trader will use for analysis and decision-making.',
+    schema: z.object({
+      readerIds: z
+        .array(z.number())
+        .describe(
+          'Array of reader IDs to associate with this trader. Select 2-5 readers that are most relevant to the trader strategy.'
+        ),
+      reasoning: z
+        .string()
+        .describe(
+          'Brief explanation for why these readers were selected and how they support the trader strategy'
+        ),
+    }),
+  }
+);
+
+/**
  * Export all tools as an array for easy binding
  */
 export const defaultTools = [

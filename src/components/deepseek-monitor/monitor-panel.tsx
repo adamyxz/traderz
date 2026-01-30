@@ -33,7 +33,7 @@ export function MonitorPanel({
   const lastUpdate = events.length > 0 ? events[events.length - 1].timestamp : undefined;
 
   return (
-    <div className="fixed bottom-24 right-6 w-[480px] h-[360px] bg-gray-900 rounded-lg shadow-2xl border border-gray-700 flex flex-col z-50">
+    <div className="fixed bottom-24 right-6 w-[480px] h-[900px] bg-gray-900 rounded-lg shadow-2xl border border-gray-700 flex flex-col z-50">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
         <div>

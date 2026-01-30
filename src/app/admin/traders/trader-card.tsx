@@ -15,6 +15,10 @@ import {
   ArrowDownRight,
   Coins,
   BarChart3,
+  Database,
+  CheckSquare,
+  Square,
+  Briefcase,
 } from 'lucide-react';
 import type { Trader } from '@/db/schema';
 
@@ -29,15 +33,25 @@ interface KlineInterval {
   label: string;
 }
 
+interface Reader {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
 interface TraderWithRelations extends Trader {
   preferredTradingPair?: TradingPair;
   preferredKlineIntervals?: KlineInterval[];
+  readers?: Reader[];
 }
 
 interface TraderCardProps {
   trader: TraderWithRelations;
   onEdit: () => void;
   onDelete: () => void;
+  onViewPositions?: () => void;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 const statusConfig = {
@@ -75,7 +89,14 @@ const isTraderActive = (activeTimeStart: string, activeTimeEnd: string): boolean
   return currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes < endTimeInMinutes;
 };
 
-export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps) {
+export default function TraderCard({
+  trader,
+  onEdit,
+  onDelete,
+  onViewPositions,
+  isSelected = false,
+  onToggleSelect,
+}: TraderCardProps) {
   const [isActive, setIsActive] = useState(false);
 
   // Update active status every minute
@@ -94,42 +115,14 @@ export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps
 
   return (
     <div
-      className="group relative overflow-hidden rounded-xl p-3 transition-all hover:scale-[1.02] hover:shadow-xl"
+      className={`group relative overflow-hidden rounded-xl p-3 transition-all hover:scale-[1.02] hover:shadow-xl ${
+        isSelected ? 'ring-2 ring-sky-500' : ''
+      }`}
       style={{ backgroundColor: '#2D2D2D' }}
     >
-      {/* Top Bar: Name and Actions */}
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1 min-w-0 pr-2">
-          <h3 className="text-sm font-bold text-white truncate">{trader.name}</h3>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={onEdit}
-            className="flex h-6 w-6 items-center justify-center rounded bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 transition-colors"
-            title="Edit"
-          >
-            <Edit className="h-3 w-3" />
-          </button>
-          <button
-            onClick={onDelete}
-            className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-            title="Delete"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* Strategy Badge */}
+      {/* Top Bar: Name */}
       <div className="mb-2">
-        <div className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-500/20 to-blue-500/20 px-2 py-0.5">
-          <TrendingUp className="h-3 w-3 text-sky-400" />
-          <span className="text-[10px] font-medium text-sky-300">
-            {strategyConfig[trader.tradingStrategy]}
-          </span>
-        </div>
+        <h3 className="text-base font-bold text-white truncate">{trader.name}</h3>
       </div>
 
       {/* Metrics Grid - Compact with Icons */}
@@ -192,28 +185,88 @@ export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps
         <span className="text-[9px] text-gray-500">UTC</span>
       </div>
 
-      {/* Preferences - Compact */}
-      {(trader.preferredTradingPair ||
-        (trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0)) && (
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          {trader.preferredTradingPair && (
-            <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
-              <Coins className="h-3 w-3 text-orange-400" />
-              <span className="text-[9px] font-medium text-gray-300">
-                {trader.preferredTradingPair.symbol}
-              </span>
-            </div>
-          )}
-          {trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0 && (
-            <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
-              <BarChart3 className="h-3 w-3 text-blue-400" />
-              <span className="text-[9px] font-medium text-gray-300">
-                {trader.preferredKlineIntervals.map((i) => i.code).join(', ')}
-              </span>
-            </div>
-          )}
+      {/* Preferences - Compact with Strategy Badge */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {trader.preferredTradingPair && (
+          <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
+            <Coins className="h-3 w-3 text-orange-400" />
+            <span className="text-[9px] font-medium text-gray-300">
+              {trader.preferredTradingPair.symbol}
+            </span>
+          </div>
+        )}
+        {trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0 && (
+          <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
+            <BarChart3 className="h-3 w-3 text-blue-400" />
+            <span className="text-[9px] font-medium text-gray-300">
+              {trader.preferredKlineIntervals.map((i) => i.code).join(', ')}
+            </span>
+          </div>
+        )}
+        {/* Strategy Badge */}
+        <div className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-500/20 to-blue-500/20 px-2 py-0.5">
+          <TrendingUp className="h-3 w-3 text-sky-400" />
+          <span className="text-[9px] font-medium text-sky-300">
+            {strategyConfig[trader.tradingStrategy]}
+          </span>
         </div>
-      )}
+      </div>
+
+      {/* Risk Control - Inline */}
+      <div className="mb-2 flex items-center gap-2 rounded bg-gray-700/20 px-2 py-1">
+        <div className="flex items-center gap-1 text-[10px]">
+          <ArrowDownRight className="h-3 w-3 text-red-400" />
+          <span className="text-gray-400">{Number(trader.stopLossThreshold).toFixed(0)}%</span>
+        </div>
+        <div className="w-px h-3 bg-gray-600"></div>
+        <div className="flex items-center gap-1 text-[10px]">
+          <ArrowUpRight className="h-3 w-3 text-emerald-400" />
+          <span className="text-gray-400">{Number(trader.positionTakeProfit).toFixed(0)}%</span>
+        </div>
+        <div className="flex-1"></div>
+        <div className="flex items-center gap-1 text-[10px]">
+          <DollarSign className="h-3 w-3 text-sky-400" />
+          <span className="text-gray-400">{Number(trader.maxLeverage).toFixed(1)}x</span>
+        </div>
+      </div>
+
+      {/* Active Hours - Compact */}
+      <div className="mb-2 flex items-center justify-between rounded bg-gray-800/40 px-2 py-1">
+        <div className="flex items-center gap-1 text-[10px] text-gray-400">
+          <Clock className="h-3 w-3" />
+          <span>{trader.activeTimeStart}</span>
+          <span className="text-gray-500">→</span>
+          <span>{trader.activeTimeEnd}</span>
+        </div>
+        <span className="text-[9px] text-gray-500">UTC</span>
+      </div>
+
+      {/* Preferences - Compact with Strategy Badge */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {trader.preferredTradingPair && (
+          <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
+            <Coins className="h-3 w-3 text-orange-400" />
+            <span className="text-[9px] font-medium text-gray-300">
+              {trader.preferredTradingPair.symbol}
+            </span>
+          </div>
+        )}
+        {trader.preferredKlineIntervals && trader.preferredKlineIntervals.length > 0 && (
+          <div className="inline-flex items-center gap-1 rounded bg-gray-700/30 px-2 py-1">
+            <BarChart3 className="h-3 w-3 text-blue-400" />
+            <span className="text-[9px] font-medium text-gray-300">
+              {trader.preferredKlineIntervals.map((i) => i.code).join(', ')}
+            </span>
+          </div>
+        )}
+        {/* Strategy Badge */}
+        <div className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-500/20 to-blue-500/20 px-2 py-0.5">
+          <TrendingUp className="h-3 w-3 text-sky-400" />
+          <span className="text-[9px] font-medium text-sky-300">
+            {strategyConfig[trader.tradingStrategy]}
+          </span>
+        </div>
+      </div>
 
       {/* Footer - Status Indicators */}
       <div className="flex items-center justify-between border-t border-gray-700/50 pt-2 mt-2">
@@ -242,10 +295,67 @@ export default function TraderCard({ trader, onEdit, onDelete }: TraderCardProps
         </span>
       </div>
 
-      {/* Description Tooltip on Hover */}
+      {/* Description Panel on Hover with Actions */}
       {trader.description && (
-        <div className="absolute inset-x-0 bottom-0 z-10 max-h-0 overflow-hidden rounded-b-xl bg-gray-900/95 backdrop-blur-sm transition-all duration-300 group-hover:max-h-24 group-hover:py-2">
-          <p className="px-3 text-[10px] text-gray-300 line-clamp-3">{trader.description}</p>
+        <div className="absolute inset-x-0 bottom-0 z-10 max-h-0 overflow-hidden rounded-b-xl bg-gray-900/98 backdrop-blur-sm transition-all duration-300 group-hover:max-h-[40%] group-hover:p-3 flex flex-col">
+          <p className="flex-1 text-[10px] text-gray-300 overflow-y-auto mb-3 line-clamp-6 scrollbar-thin">
+            {trader.description}
+          </p>
+
+          {/* Action Buttons at Bottom */}
+          <div className="flex items-center justify-between border-t border-gray-700/50 pt-3 mt-auto">
+            {/* Selection Checkbox */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSelect?.();
+              }}
+              className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                isSelected
+                  ? 'bg-sky-500 text-white hover:bg-sky-600'
+                  : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
+              }`}
+              title={isSelected ? 'Deselect' : 'Select'}
+            >
+              {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+            </button>
+
+            {/* Edit and Delete Buttons */}
+            <div className="flex items-center gap-2">
+              {onViewPositions && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewPositions();
+                  }}
+                  className="flex h-7 items-center gap-1.5 rounded bg-purple-500/20 px-3 text-purple-400 hover:bg-purple-500/30 transition-colors text-[10px] font-medium"
+                >
+                  <Briefcase className="h-3 w-3" />
+                  Positions
+                </button>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="flex h-7 items-center gap-1.5 rounded bg-sky-500/20 px-3 text-sky-400 hover:bg-sky-500/30 transition-colors text-[10px] font-medium"
+              >
+                <Edit className="h-3 w-3" />
+                Edit
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="flex h-7 items-center gap-1.5 rounded bg-red-500/20 px-3 text-red-400 hover:bg-red-500/30 transition-colors text-[10px] font-medium"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

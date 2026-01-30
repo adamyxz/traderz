@@ -1,9 +1,20 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
-import { Plus, Search, SortAsc, ChevronDown, X, Sparkles } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  SortAsc,
+  ChevronDown,
+  X,
+  Sparkles,
+  CheckSquare,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import CreateTraderModal from './create-trader-modal';
 import EditTraderModal from './edit-trader-modal';
 import AiGenerateModal from './ai-generate-modal';
@@ -21,9 +32,16 @@ interface KlineInterval {
   label: string;
 }
 
+interface Reader {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
 interface TraderWithRelations extends Trader {
   preferredTradingPair?: TradingPair;
   preferredKlineIntervals?: KlineInterval[];
+  readers?: Reader[];
 }
 
 type SortField =
@@ -56,6 +74,7 @@ const isTraderActive = (activeTimeStart: string, activeTimeEnd: string): boolean
 };
 
 export default function TradersAdminPage() {
+  const router = useRouter();
   const [traders, setTraders] = useState<TraderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,6 +88,8 @@ export default function TradersAdminPage() {
   const [isAiGenerateModalOpen, setIsAiGenerateModalOpen] = useState(false);
   const [editingTrader, setEditingTrader] = useState<Trader | null>(null);
   const [deletingTraderId, setDeletingTraderId] = useState<number | null>(null);
+  const [selectedTraderIds, setSelectedTraderIds] = useState<Set<number>>(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   // Track if component is mounted to prevent state updates after unmount
   const isMounted = useRef(true);
@@ -222,6 +243,51 @@ export default function TradersAdminPage() {
     }
   };
 
+  const handleBatchDelete = async () => {
+    if (selectedTraderIds.size === 0) return;
+
+    try {
+      setIsBatchDeleting(true);
+      const response = await fetch('/api/traders/batch-delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedTraderIds) }),
+      });
+
+      if (!response.ok) throw new Error('Failed to batch delete traders');
+
+      if (isMounted.current) {
+        setTraders(traders.filter((t) => !selectedTraderIds.has(t.id)));
+        setSelectedTraderIds(new Set());
+      }
+    } catch (error) {
+      console.error('Error batch deleting traders:', error);
+      if (isMounted.current) {
+        alert('Batch deletion failed, please try again');
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsBatchDeleting(false);
+      }
+    }
+  };
+
+  const toggleTraderSelection = (traderId: number) => {
+    setSelectedTraderIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(traderId)) {
+        newSet.delete(traderId);
+      } else {
+        newSet.add(traderId);
+      }
+      return newSet;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedTraderIds(new Set());
+  };
+
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -229,6 +295,10 @@ export default function TradersAdminPage() {
       setSortField(field);
       setSortOrder('desc');
     }
+  };
+
+  const handleViewPositions = (traderId: number) => {
+    router.push(`/admin/positions?traderId=${traderId}`);
   };
 
   if (loading) {
@@ -252,59 +322,9 @@ export default function TradersAdminPage() {
         <AdminHeader />
 
         <main className="p-8">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-white">Trader Management</h1>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setIsAiGenerateModalOpen(true)}
-                  className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg shadow-purple-500/30"
-                >
-                  <Sparkles className="h-5 w-5" />
-                  AI+
-                </button>
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 px-6 py-3 text-white font-medium hover:from-sky-600 hover:to-blue-700 transition-all shadow-lg shadow-sky-500/30"
-                >
-                  <Plus className="h-5 w-5" />
-                  Add Trader
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Stats Overview */}
-          <div className="mb-8 grid grid-cols-4 gap-6">
-            <div className="rounded-2xl p-6" style={{ backgroundColor: '#2D2D2D' }}>
-              <p className="text-sm text-gray-400">Total Traders</p>
-              <p className="mt-2 text-3xl font-bold text-white">{traders.length}</p>
-            </div>
-            <div className="rounded-2xl p-6" style={{ backgroundColor: '#2D2D2D' }}>
-              <p className="text-sm text-gray-400">Enabled</p>
-              <p className="mt-2 text-3xl font-bold text-emerald-400">
-                {traders.filter((t) => t.status === 'enabled').length}
-              </p>
-            </div>
-            <div className="rounded-2xl p-6" style={{ backgroundColor: '#2D2D2D' }}>
-              <p className="text-sm text-gray-400">Avg Risk Score</p>
-              <p className="mt-2 text-3xl font-bold text-sky-400">
-                {traders.length > 0
-                  ? (
-                      traders.reduce((sum, t) => sum + t.riskPreferenceScore, 0) / traders.length
-                    ).toFixed(1)
-                  : '0'}
-              </p>
-            </div>
-            <div className="rounded-2xl p-6" style={{ backgroundColor: '#2D2D2D' }}>
-              <p className="text-sm text-gray-400">Max Positions</p>
-              <p className="mt-2 text-3xl font-bold text-purple-400">
-                {traders.length > 0 ? Math.max(...traders.map((t) => t.maxPositions)) : 0}
-              </p>
-            </div>
+          {/* Header with Title */}
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold text-white">Trader Management</h1>
           </div>
 
           {/* Filters and Search */}
@@ -372,30 +392,104 @@ export default function TradersAdminPage() {
             </div>
           </div>
 
-          {/* Sort Buttons */}
-          <div className="mb-6 flex items-center gap-3">
-            <span className="text-sm text-gray-400">Sort:</span>
-            {[
-              { field: 'name' as SortField, label: 'Name' },
-              { field: 'createdAt' as SortField, label: 'Created' },
-              { field: 'aggressivenessLevel' as SortField, label: 'Aggressiveness' },
-              { field: 'riskPreferenceScore' as SortField, label: 'Risk Score' },
-            ].map(({ field, label }) => (
+          {/* Controls Row: Select All, Sort, and Action Buttons */}
+          <div
+            className="mb-6 rounded-2xl p-4 flex items-center justify-between gap-4"
+            style={{ backgroundColor: '#2D2D2D' }}
+          >
+            {/* Select All Control */}
+            <div className="flex items-center gap-3">
               <button
-                key={field}
-                onClick={() => toggleSort(field)}
-                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                  sortField === field
-                    ? 'bg-sky-500 text-white'
-                    : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
-                }`}
+                onClick={() => {
+                  if (selectedTraderIds.size === paginatedTraders.length) {
+                    setSelectedTraderIds(new Set());
+                  } else {
+                    setSelectedTraderIds(new Set(paginatedTraders.map((t) => t.id)));
+                  }
+                }}
+                className="flex items-center gap-2 text-sm text-gray-300 hover:text-white transition-colors"
+                disabled={paginatedTraders.length === 0}
               >
-                {label}
-                <SortAsc
-                  className={`h-4 w-4 ${sortField === field && sortOrder === 'desc' ? 'rotate-180' : ''}`}
-                />
+                {selectedTraderIds.size === paginatedTraders.length ? (
+                  <CheckSquare className="h-5 w-5 text-sky-500" />
+                ) : (
+                  <Square className="h-5 w-5" />
+                )}
+                <span>
+                  {selectedTraderIds.size === paginatedTraders.length
+                    ? 'Deselect All'
+                    : 'Select All'}
+                </span>
               </button>
-            ))}
+              {selectedTraderIds.size > 0 && (
+                <span className="text-sm text-gray-300">{selectedTraderIds.size} selected</span>
+              )}
+            </div>
+
+            {/* Sort Buttons */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-400">Sort:</span>
+              {[
+                { field: 'name' as SortField, label: 'Name' },
+                { field: 'createdAt' as SortField, label: 'Created' },
+                { field: 'aggressivenessLevel' as SortField, label: 'Aggressiveness' },
+                { field: 'riskPreferenceScore' as SortField, label: 'Risk Score' },
+              ].map(({ field, label }) => (
+                <button
+                  key={field}
+                  onClick={() => toggleSort(field)}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                    sortField === field
+                      ? 'bg-sky-500 text-white'
+                      : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  {label}
+                  <SortAsc
+                    className={`h-3.5 w-3.5 ${sortField === field && sortOrder === 'desc' ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3">
+              {selectedTraderIds.size > 0 ? (
+                <>
+                  <button
+                    onClick={clearSelection}
+                    className="rounded-lg bg-gray-700 px-4 py-2.5 text-gray-300 hover:bg-gray-600 transition-colors text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBatchDelete}
+                    disabled={isBatchDeleting}
+                    className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2.5 text-white font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete {selectedTraderIds.size}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setIsAiGenerateModalOpen(true)}
+                    className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg shadow-purple-500/30 text-sm"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    AI+
+                  </button>
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-white font-medium hover:from-sky-600 hover:to-blue-700 transition-all shadow-lg shadow-sky-500/30 text-sm"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Trader
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Trader Cards Grid */}
@@ -411,6 +505,9 @@ export default function TradersAdminPage() {
                   trader={trader}
                   onEdit={() => setEditingTrader(trader)}
                   onDelete={() => setDeletingTraderId(trader.id)}
+                  onViewPositions={() => handleViewPositions(trader.id)}
+                  isSelected={selectedTraderIds.has(trader.id)}
+                  onToggleSelect={() => toggleTraderSelection(trader.id)}
                 />
               ))}
             </div>

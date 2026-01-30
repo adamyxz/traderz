@@ -5,6 +5,8 @@ import {
   tradingPairs,
   klineIntervals,
   traderKlineIntervals,
+  readers,
+  traderReaders,
   type Trader,
 } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -13,6 +15,7 @@ import { eq } from 'drizzle-orm';
 export interface TraderWithRelations extends Trader {
   preferredTradingPair?: typeof tradingPairs.$inferSelect;
   preferredKlineIntervals?: (typeof klineIntervals.$inferSelect)[];
+  readers?: (typeof readers.$inferSelect)[];
 }
 
 // GET /api/traders - 获取所有交易员（包含关联数据）
@@ -21,10 +24,12 @@ export async function GET() {
     // 获取所有交易员
     const allTraders = await db.select().from(traders).orderBy(traders.createdAt);
 
-    // 获取所有交易对和周期（用于后续查找）
+    // 获取所有交易对、周期和readers（用于后续查找）
     const allPairs = await db.select().from(tradingPairs);
     const allIntervals = await db.select().from(klineIntervals);
-    const allRelations = await db.select().from(traderKlineIntervals);
+    const allReaders = await db.select().from(readers);
+    const allIntervalRelations = await db.select().from(traderKlineIntervals);
+    const allReaderRelations = await db.select().from(traderReaders);
 
     // 为每个trader添加关联数据
     const tradersWithRelations: TraderWithRelations[] = await Promise.all(
@@ -35,15 +40,22 @@ export async function GET() {
           : undefined;
 
         // 查找偏好的K线周期
-        const intervalIds = allRelations
+        const intervalIds = allIntervalRelations
           .filter((r) => r.traderId === trader.id)
           .map((r) => r.klineIntervalId);
         const preferredIntervals = allIntervals.filter((i) => intervalIds.includes(i.id));
+
+        // 查找关联的Readers
+        const readerIds = allReaderRelations
+          .filter((r) => r.traderId === trader.id)
+          .map((r) => r.readerId);
+        const traderReaders = allReaders.filter((r) => readerIds.includes(r.id));
 
         return {
           ...trader,
           preferredTradingPair: preferredPair,
           preferredKlineIntervals: preferredIntervals,
+          readers: traderReaders,
         };
       })
     );
@@ -107,6 +119,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 如果提供了Readers，创建关联关系
+    if (body.preferredReaderIds && Array.isArray(body.preferredReaderIds)) {
+      const readerRelations = body.preferredReaderIds
+        .filter((id: number) => id != null)
+        .map((readerId: number) => ({
+          traderId,
+          readerId,
+        }));
+
+      if (readerRelations.length > 0) {
+        await db.insert(traderReaders).values(readerRelations);
+      }
+    }
+
     // 获取完整的交易员数据（包含关联）
     const [preferredPair] = body.preferredTradingPairId
       ? await db.select().from(tradingPairs).where(eq(tradingPairs.id, body.preferredTradingPairId))
@@ -123,10 +149,22 @@ export async function POST(request: NextRequest) {
         ? await db.select().from(klineIntervals).where(eq(klineIntervals.id, intervalIds[0]))
         : [];
 
+    const readerRelations = await db
+      .select()
+      .from(traderReaders)
+      .where(eq(traderReaders.traderId, traderId));
+
+    const readerIds = readerRelations.map((r) => r.readerId);
+    const traderReadersList =
+      readerIds.length > 0
+        ? await db.select().from(readers).where(eq(readers.id, readerIds[0]))
+        : [];
+
     const traderWithRelations: TraderWithRelations = {
       ...newTrader[0],
       preferredTradingPair: preferredPair,
       preferredKlineIntervals: preferredIntervals,
+      readers: traderReadersList,
     };
 
     return NextResponse.json(traderWithRelations, { status: 201 });

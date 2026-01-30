@@ -18,9 +18,16 @@ interface KlineInterval {
   seconds: number;
 }
 
+interface Reader {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
 interface TraderWithRelations extends Trader {
   preferredTradingPair?: TradingPair;
   preferredKlineIntervals?: KlineInterval[];
+  readers?: Reader[];
 }
 
 interface EditTraderModalProps {
@@ -64,6 +71,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     // 偏好设置
     preferredTradingPairId: number | null;
     preferredKlineIntervalIds: number[];
+    preferredReaderIds: number[];
   }>({
     // 基础信息
     name: trader.name,
@@ -98,27 +106,32 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     // 偏好设置
     preferredTradingPairId: trader.preferredTradingPairId || null,
     preferredKlineIntervalIds: trader.preferredKlineIntervals?.map((i) => i.id) || [],
+    preferredReaderIds: trader.readers?.map((r) => r.id) || [],
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [tradingPairs, setTradingPairs] = useState<TradingPair[]>([]);
   const [klineIntervals, setKlineIntervals] = useState<KlineInterval[]>([]);
+  const [readers, setReaders] = useState<Reader[]>([]);
   const [loadingPairs, setLoadingPairs] = useState(false);
   const [loadingIntervals, setLoadingIntervals] = useState(false);
+  const [loadingReaders, setLoadingReaders] = useState(false);
 
   // 交易对搜索状态
   const [pairSearchQuery, setPairSearchQuery] = useState('');
   const [isPairDropdownOpen, setIsPairDropdownOpen] = useState(false);
 
-  // 获取交易对和周期数据
+  // 获取交易对、周期和readers数据
   useEffect(() => {
     const fetchData = async () => {
       setLoadingPairs(true);
       setLoadingIntervals(true);
+      setLoadingReaders(true);
       try {
-        const [pairsRes, intervalsRes] = await Promise.all([
+        const [pairsRes, intervalsRes, readersRes] = await Promise.all([
           fetch('/api/trading-pairs'),
           fetch('/api/kline-intervals'),
+          fetch('/api/readers'),
         ]);
 
         if (pairsRes.ok) {
@@ -130,11 +143,17 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
           const intervalsData = await intervalsRes.json();
           setKlineIntervals(intervalsData);
         }
+
+        if (readersRes.ok) {
+          const readersData = await readersRes.json();
+          setReaders(readersData);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
         setLoadingPairs(false);
         setLoadingIntervals(false);
+        setLoadingReaders(false);
       }
     };
 
@@ -192,7 +211,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div
-        className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl p-5"
+        className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto scrollbar-thin rounded-xl p-5"
         style={{ backgroundColor: '#2D2D2D' }}
       >
         {/* Close Button */}
@@ -634,7 +653,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
 
                   {/* 下拉列表 */}
                   {isPairDropdownOpen && (
-                    <div className="absolute z-10 mt-1 w-full rounded-md bg-gray-800 border border-gray-700 shadow-lg max-h-60 overflow-auto">
+                    <div className="absolute z-10 mt-1 w-full rounded-md bg-gray-800 border border-gray-700 shadow-lg max-h-60 overflow-auto scrollbar-thin">
                       {loadingPairs ? (
                         <div className="px-3 py-2 text-sm text-gray-400">Loading...</div>
                       ) : (
@@ -725,6 +744,61 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                 )}
                 <p className="mt-1.5 text-[10px] text-gray-500">
                   {formData.preferredKlineIntervalIds.length} interval(s) selected
+                </p>
+              </div>
+
+              {/* Reader多选 */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-300">Data Readers</label>
+                {loadingReaders ? (
+                  <div className="text-sm text-gray-400 py-2">Loading readers...</div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {readers.map((reader) => (
+                      <label
+                        key={reader.id}
+                        className={`flex items-start gap-2 rounded-md px-3 py-2 cursor-pointer transition-all ${
+                          formData.preferredReaderIds.includes(reader.id)
+                            ? 'bg-sky-500/20 border border-sky-500/50'
+                            : 'bg-gray-700/30 border border-gray-600 hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.preferredReaderIds.includes(reader.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                preferredReaderIds: [...formData.preferredReaderIds, reader.id],
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                preferredReaderIds: formData.preferredReaderIds.filter(
+                                  (id) => id !== reader.id
+                                ),
+                              });
+                            }
+                          }}
+                          className="h-3.5 w-3.5 mt-0.5 rounded border-gray-500 bg-gray-600 text-sky-500 focus:ring-2 focus:ring-sky-500/20"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs text-white font-medium block">
+                            {reader.name}
+                          </span>
+                          {reader.description && (
+                            <span className="text-[10px] text-gray-400 block truncate">
+                              {reader.description}
+                            </span>
+                          )}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1.5 text-[10px] text-gray-500">
+                  {formData.preferredReaderIds.length} reader(s) selected
                 </p>
               </div>
             </div>

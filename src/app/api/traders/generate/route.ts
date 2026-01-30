@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { traders, tradingPairs, klineIntervals, traderKlineIntervals } from '@/db/schema';
+import {
+  traders,
+  tradingPairs,
+  klineIntervals,
+  traderKlineIntervals,
+  traderReaders,
+  readers,
+} from '@/db/schema';
 import { generateMultipleTraders } from '@/lib/deepseek';
+
+// 扩展的Trader类型，包含关联数据
+interface TraderWithRelations extends traders.$inferSelect {
+  preferredTradingPair?: typeof tradingPairs.$inferSelect;
+  preferredKlineIntervals?: (typeof klineIntervals.$inferSelect)[];
+  associatedReaders?: (typeof readers.$inferSelect)[];
+}
 
 /**
  * POST /api/traders/generate
@@ -17,14 +31,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Count must be between 1 and 10' }, { status: 400 });
     }
 
-    // Fetch existing traders
-    const existingTraders = await db.select().from(traders).orderBy(traders.createdAt);
+    // Fetch existing traders with relations
+    const allTraders = await db.select().from(traders).orderBy(traders.createdAt);
+    const [allPairs, allIntervals, allReaders, allIntervalRelations, allReaderRelations] =
+      await Promise.all([
+        db.select().from(tradingPairs),
+        db.select().from(klineIntervals),
+        db.select().from(readers),
+        db.select().from(traderKlineIntervals),
+        db.select().from(traderReaders),
+      ]);
 
-    // Fetch trading pairs and intervals for mapping
-    const [allPairs, allIntervals] = await Promise.all([
-      db.select().from(tradingPairs),
-      db.select().from(klineIntervals),
-    ]);
+    // Build traders with relations
+    const existingTraders: TraderWithRelations[] = allTraders.map((trader) => {
+      const preferredPair = trader.preferredTradingPairId
+        ? allPairs.find((p) => p.id === trader.preferredTradingPairId)
+        : undefined;
+
+      const intervalIds = allIntervalRelations
+        .filter((r) => r.traderId === trader.id)
+        .map((r) => r.klineIntervalId);
+      const preferredIntervals = allIntervals.filter((i) => intervalIds.includes(i.id));
+
+      const readerIds = allReaderRelations
+        .filter((r) => r.traderId === trader.id)
+        .map((r) => r.readerId);
+      const traderReaders = allReaders.filter((r) => readerIds.includes(r.id));
+
+      return {
+        ...trader,
+        preferredTradingPair: preferredPair,
+        preferredKlineIntervals: preferredIntervals,
+        associatedReaders: traderReaders,
+      };
+    });
 
     // Create maps for quick lookup
     const pairSymbolToId = Object.fromEntries(allPairs.map((p) => [p.symbol, p.id]));
@@ -138,6 +178,27 @@ export async function POST(request: NextRequest) {
             klineIntervalId,
           }));
           await db.insert(traderKlineIntervals).values(intervalRelations);
+        }
+
+        // Insert reader relations if any
+        if (
+          traderConfig.selectedReaders &&
+          Array.isArray(traderConfig.selectedReaders) &&
+          traderConfig.selectedReaders.length > 0
+        ) {
+          const readerRelations = traderConfig.selectedReaders.map((readerId: number) => ({
+            traderId,
+            readerId,
+          }));
+          try {
+            await db.insert(traderReaders).values(readerRelations);
+            console.log(
+              `[Generate API] Associated ${readerRelations.length} readers with trader ${traderId}`
+            );
+          } catch (readerError) {
+            console.error('[Generate API] Error inserting reader relations:', readerError);
+            // Don't fail the entire trader creation if reader association fails
+          }
         }
 
         createdTraders.push(newTrader[0]);
