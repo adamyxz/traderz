@@ -8,14 +8,7 @@ import {
   traderReaders,
   readers,
 } from '@/db/schema';
-import { generateMultipleTraders } from '@/lib/deepseek';
-
-// 扩展的Trader类型，包含关联数据
-interface TraderWithRelations extends traders.$inferSelect {
-  preferredTradingPair?: typeof tradingPairs.$inferSelect;
-  preferredKlineIntervals?: (typeof klineIntervals.$inferSelect)[];
-  associatedReaders?: (typeof readers.$inferSelect)[];
-}
+import { generateMultipleTraders, type TraderWithRelations } from '@/lib/deepseek';
 
 /**
  * POST /api/traders/generate
@@ -66,26 +59,43 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    // Debug: Log available trading pairs and existing traders
+    console.log('[Generate API] Available trading pairs:', {
+      count: allPairs.length,
+      pairs: allPairs.map((p) => ({ id: p.id, symbol: p.symbol, baseAsset: p.baseAsset })),
+    });
+    console.log('[Generate API] Existing traders with trading pairs:', {
+      count: existingTraders.length,
+      traders: existingTraders
+        .filter((t) => t.preferredTradingPair)
+        .map((t) => ({
+          name: t.name,
+          pairSymbol: t.preferredTradingPair?.symbol,
+          pairId: t.preferredTradingPairId,
+        })),
+    });
+
     // Create maps for quick lookup
     const pairSymbolToId = Object.fromEntries(allPairs.map((p) => [p.symbol, p.id]));
 
-    // Generate new traders
-    const result = await generateMultipleTraders(existingTraders, count);
-
-    if (!result.success || !result.traders || result.traders.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'Failed to generate traders',
-          details: result.errors,
-        },
-        { status: 500 }
-      );
-    }
-
-    // Insert generated traders into database
+    // Generate new traders one at a time and insert immediately
     const createdTraders = [];
+    const errors = [];
 
-    for (const traderConfig of result.traders) {
+    // Use the generator to process traders as they are generated
+    for await (const result of generateMultipleTraders(existingTraders, count)) {
+      if (!result.success || !result.trader) {
+        errors.push(`Trader ${result.current}/${result.total}: ${result.error || 'Unknown error'}`);
+        console.error(`[Generate API] Failed to generate trader ${result.current}/${result.total}`);
+        continue;
+      }
+
+      const traderConfig = result.trader;
+      console.log(
+        `[Generate API] Generated trader ${result.current}/${result.total}:`,
+        traderConfig.name
+      );
+
       try {
         // Validate required fields
         if (
@@ -109,6 +119,7 @@ export async function POST(request: NextRequest) {
           !traderConfig.holdingPeriod
         ) {
           console.error('Invalid trader config - missing required fields:', traderConfig);
+          errors.push(`Trader ${result.current}: Missing required fields`);
           continue;
         }
 
@@ -202,10 +213,28 @@ export async function POST(request: NextRequest) {
         }
 
         createdTraders.push(newTrader[0]);
+        console.log(
+          `[Generate API] Successfully inserted trader ${result.current}/${result.total}:`,
+          traderId
+        );
       } catch (error) {
-        console.error('Error inserting trader:', error);
+        console.error('[Generate API] Error inserting trader:', error);
+        errors.push(
+          `Trader ${result.current}: ${error instanceof Error ? error.message : 'Database error'}`
+        );
         // Continue with next trader
       }
+    }
+
+    // Check if at least one trader was created
+    if (createdTraders.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'Failed to generate any traders',
+          details: errors,
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -213,7 +242,7 @@ export async function POST(request: NextRequest) {
       created: createdTraders.length,
       requested: count,
       traders: createdTraders,
-      errors: result.errors,
+      errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
     console.error('Error in generate traders API:', error);

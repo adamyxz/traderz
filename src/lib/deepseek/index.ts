@@ -103,6 +103,7 @@ export {
   generateSingleTrader,
   generateMultipleTraders,
   TRADER_GENERATION_SYSTEM_PROMPT,
+  type TraderWithRelations,
 } from './generate-trader';
 
 // ============================================================================

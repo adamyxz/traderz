@@ -129,6 +129,9 @@ async function selectTradingContext(
     .map((i) => `${i.code} (${i.label})`)
     .join(', ');
 
+  console.log('[selectTradingContext] Available trading pairs:', availablePairs);
+  console.log('[selectTradingContext] Existing preferences:', existingPreferences);
+
   const userPrompt = `Select a trading pair and kline intervals combination for a new trader.
 
 Existing traders' preferences:
@@ -157,6 +160,7 @@ Use the select_trading_context tool to make your selection.`;
       if (toolCall.name === 'select_trading_context') {
         try {
           const selection = JSON.parse(toolCall.arguments);
+          console.log('[selectTradingContext] AI selection:', selection);
           return {
             success: true,
             tradingPair: selection.tradingPair,
@@ -420,15 +424,63 @@ export async function generateSingleTrader(existingTraders: TraderWithRelations[
   // Bind the create trader tool
   const tools = [createTraderTool];
 
+  // Debug: Log all existing traders with their preferred trading pairs
+  console.log('[generateSingleTrader] All existing traders:', {
+    total: existingTraders.length,
+    traders: existingTraders.map((t) => ({
+      name: t.name,
+      preferredTradingPair: t.preferredTradingPair?.symbol || 'none',
+      preferredTradingPairId: t.preferredTradingPairId,
+    })),
+  });
+
+  console.log('[generateSingleTrader] Looking for traders with trading pair:', {
+    targetPair: contextSelection.tradingPair,
+  });
+
+  // Helper function to check if trading pair matches
+  // Supports multiple formats: full symbol (BNBUSDT) or base asset (BNB)
+  const isTradingPairMatch = (
+    traderPair: { symbol?: string; baseAsset?: string } | undefined,
+    targetPair: string
+  ): boolean => {
+    if (!traderPair) return false;
+
+    // Exact symbol match (e.g., BNBUSDT === BNBUSDT)
+    if (traderPair.symbol === targetPair) return true;
+
+    // Base asset match (e.g., BNB === BNB when target is BNBUSDT)
+    if (
+      traderPair.baseAsset &&
+      targetPair.toUpperCase().startsWith(traderPair.baseAsset.toUpperCase())
+    ) {
+      return true;
+    }
+
+    // Handle case where target might be just base asset (e.g., "BNB")
+    if (traderPair.symbol && traderPair.symbol.toUpperCase().startsWith(targetPair.toUpperCase())) {
+      return true;
+    }
+
+    return false;
+  };
+
   // Filter existing traders - only include those using the same trading pair
   const relatedTraders = existingTraders.filter(
-    (t) => t.preferredTradingPair?.symbol === contextSelection.tradingPair
+    (t) =>
+      contextSelection.tradingPair &&
+      isTradingPairMatch(t.preferredTradingPair, contextSelection.tradingPair)
   );
 
   console.log('[generateSingleTrader] Filtered related traders:', {
     total: existingTraders.length,
     related: relatedTraders.length,
     tradingPair: contextSelection.tradingPair,
+    relatedTraders: relatedTraders.map((t) => ({
+      name: t.name,
+      pairSymbol: t.preferredTradingPair?.symbol,
+      pairBaseAsset: t.preferredTradingPair?.baseAsset,
+    })),
   });
 
   // Format existing traders - only descriptions of related traders
@@ -611,58 +663,64 @@ Use the create_trader tool to generate the configuration.`;
 
 /**
  * Generate multiple traders sequentially
+ * IMPORTANT: This is a generator function that yields traders one at a time
+ * to allow immediate database insertion instead of waiting for all to complete.
  */
-export async function generateMultipleTraders(
+export async function* generateMultipleTraders(
   existingTraders: TraderWithRelations[],
-  count: number,
-  onProgress?: (
-    current: number,
-    total: number,
-    trader: Partial<Trader> & {
+  count: number
+): AsyncGenerator<
+  {
+    success: boolean;
+    trader?: Partial<Trader> & {
       status?: string;
       preferredTradingPair?: string;
       preferredKlineIntervals?: string[];
       selectedReaders?: number[];
-    }
-  ) => void
-): Promise<{
-  success: boolean;
-  traders?: Array<
-    Partial<Trader> & {
-      status?: string;
-      preferredTradingPair?: string;
-      preferredKlineIntervals?: string[];
-      selectedReaders?: number[];
-    }
-  >;
-  errors?: string[];
-}> {
-  const generatedTraders: Array<
-    Partial<Trader> & {
-      status?: string;
-      preferredTradingPair?: string;
-      preferredKlineIntervals?: string[];
-      selectedReaders?: number[];
-    }
-  > = [];
-  const errors: string[] = [];
+    };
+    error?: string;
+    current: number;
+    total: number;
+  },
+  void,
+  unknown
+> {
   const allTraders = [...existingTraders];
-
-  // Emit overall start event
   console.log(`[generateMultipleTraders] Starting generation of ${count} traders`);
 
   for (let i = 0; i < count; i++) {
     const result = await generateSingleTrader(allTraders);
 
     if (result.success && result.trader) {
-      generatedTraders.push(result.trader);
-      allTraders.push({ ...result.trader, id: allTraders.length + 1 } as Trader);
+      // Build a proper TraderWithRelations object with correct preferredTradingPair structure
+      const newTrader: TraderWithRelations = {
+        ...result.trader,
+        id: allTraders.length + 1,
+        // Convert string trading pair to object format for proper matching
+        preferredTradingPair: result.trader.preferredTradingPair
+          ? ({
+              symbol: result.trader.preferredTradingPair,
+              baseAsset: result.trader.preferredTradingPair.replace('USDT', ''),
+            } as typeof tradingPairs.$inferSelect)
+          : undefined,
+        preferredKlineIntervals: undefined,
+      };
 
-      if (onProgress) {
-        onProgress(i + 1, count, result.trader);
-      }
+      allTraders.push(newTrader);
+
+      yield {
+        success: true,
+        trader: result.trader,
+        current: i + 1,
+        total: count,
+      };
     } else {
-      errors.push(`Trader ${i + 1}: ${result.error || 'Unknown error'}`);
+      yield {
+        success: false,
+        error: result.error,
+        current: i + 1,
+        total: count,
+      };
     }
 
     // Small delay between generations to avoid rate limiting
@@ -671,14 +729,5 @@ export async function generateMultipleTraders(
     }
   }
 
-  // Emit overall completion summary
-  console.log(
-    `[generateMultipleTraders] Completed: ${generatedTraders.length}/${count} traders generated`
-  );
-
-  return {
-    success: generatedTraders.length > 0,
-    traders: generatedTraders,
-    errors: errors.length > 0 ? errors : undefined,
-  };
+  console.log(`[generateMultipleTraders] Completed generation of ${count} traders`);
 }

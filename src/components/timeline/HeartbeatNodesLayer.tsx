@@ -246,7 +246,6 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
 
   return (
     <div
-      ref={setContainerRef}
       className="relative w-full overflow-visible rounded-2xl"
       style={{
         backgroundColor: '#252525',
