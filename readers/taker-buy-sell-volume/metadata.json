@@ -1,6 +1,6 @@
 {
   "name": "taker-buy-sell-volume",
-  "description": "获取主动买卖量数据，包含主动买入/卖出量比值、主动买入量、主动卖出量",
+  "description": "Retrieves taker buy/sell volume data from Binance futures. Taker volume represents aggressive market orders that 'take' liquidity from the order book. Output includes: buy/sell volume ratio, absolute taker buy volume, and absolute taker sell volume. This metric helps identify market direction and momentum. A ratio > 1 indicates more aggressive buying pressure, while < 1 indicates selling pressure. Useful for confirming price trends and spotting potential reversals when divergences occur.",
   "standardParameters": {
     "symbol": "symbol",
     "interval": "period"
@@ -9,8 +9,8 @@
     {
       "name": "symbol",
       "type": "string",
-      "displayName": "交易对",
-      "description": "币安交易对符号，如 BTCUSDT",
+      "displayName": "Trading Pair",
+      "description": "Binance trading pair symbol (e.g., BTCUSDT)",
       "required": true,
       "validation": {
         "pattern": "^[A-Z]{2,20}USDT$"
@@ -19,8 +19,8 @@
     {
       "name": "period",
       "type": "enum",
-      "displayName": "时间周期",
-      "description": "数据的时间周期",
+      "displayName": "Time Period",
+      "description": "Time interval for data aggregation",
       "required": true,
       "validation": {
         "enum": ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
@@ -29,8 +29,8 @@
     {
       "name": "limit",
       "type": "number",
-      "displayName": "数据条数",
-      "description": "获取的数据条数，最大500",
+      "displayName": "Data Limit",
+      "description": "Number of data points to retrieve (max 500)",
       "required": false,
       "defaultValue": 30,
       "validation": {
@@ -41,8 +41,8 @@
     {
       "name": "startTime",
       "type": "number",
-      "displayName": "开始时间戳",
-      "description": "开始时间的毫秒时间戳",
+      "displayName": "Start Timestamp",
+      "description": "Start time in milliseconds since epoch",
       "required": false,
       "validation": {
         "min": 0
@@ -51,8 +51,8 @@
     {
       "name": "endTime",
       "type": "number",
-      "displayName": "结束时间戳",
-      "description": "结束时间的毫秒时间戳",
+      "displayName": "End Timestamp",
+      "description": "End time in milliseconds since epoch",
       "required": false,
       "validation": {
         "min": 0

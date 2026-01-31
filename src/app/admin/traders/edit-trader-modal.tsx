@@ -38,12 +38,12 @@ interface EditTraderModalProps {
 
 export default function EditTraderModal({ trader, onClose, onUpdate }: EditTraderModalProps) {
   const [formData, setFormData] = useState<{
-    // 基础信息
+    // Basic Info
     name: string;
     description: string;
     status: 'enabled' | 'paused' | 'disabled';
 
-    // 交易参数
+    // Trading Parameters
     aggressivenessLevel: number;
     maxLeverage: number;
     minLeverage: number;
@@ -53,7 +53,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     positionStrategy: 'none' | 'martingale' | 'pyramid';
     allowShort: boolean;
 
-    // 风险控制
+    // Risk Control
     maxDrawdown: number;
     stopLossThreshold: number;
     positionStopLoss: number;
@@ -62,23 +62,23 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     dailyMaxLoss: number;
     riskPreferenceScore: number;
 
-    // 交易行为
+    // Trading Behavior
     activeTimeStart: string;
     activeTimeEnd: string;
     tradingStrategy: 'trend' | 'oscillation' | 'arbitrage' | 'market_making' | 'scalping' | 'swing';
     holdingPeriod: 'intraday' | 'short_term' | 'medium_term' | 'long_term';
 
-    // 偏好设置
+    // Preferences
     preferredTradingPairId: number | null;
     preferredKlineIntervalIds: number[];
     preferredReaderIds: number[];
   }>({
-    // 基础信息
+    // Basic Info
     name: trader.name,
     description: trader.description || '',
     status: trader.status,
 
-    // 交易参数
+    // Trading Parameters
     aggressivenessLevel: trader.aggressivenessLevel,
     maxLeverage: Number(trader.maxLeverage),
     minLeverage: Number(trader.minLeverage),
@@ -88,7 +88,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     positionStrategy: trader.positionStrategy,
     allowShort: trader.allowShort,
 
-    // 风险控制
+    // Risk Control
     maxDrawdown: Number(trader.maxDrawdown),
     stopLossThreshold: Number(trader.stopLossThreshold),
     positionStopLoss: Number(trader.positionStopLoss),
@@ -97,13 +97,13 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     dailyMaxLoss: Number(trader.dailyMaxLoss),
     riskPreferenceScore: trader.riskPreferenceScore,
 
-    // 交易行为
+    // Trading Behavior
     activeTimeStart: trader.activeTimeStart,
     activeTimeEnd: trader.activeTimeEnd,
     tradingStrategy: trader.tradingStrategy,
     holdingPeriod: trader.holdingPeriod,
 
-    // 偏好设置
+    // Preferences
     preferredTradingPairId: trader.preferredTradingPairId || null,
     preferredKlineIntervalIds: trader.preferredKlineIntervals?.map((i) => i.id) || [],
     preferredReaderIds: trader.readers?.map((r) => r.id) || [],
@@ -117,11 +117,11 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
   const [loadingIntervals, setLoadingIntervals] = useState(false);
   const [loadingReaders, setLoadingReaders] = useState(false);
 
-  // 交易对搜索状态
+  // Trading pair search state
   const [pairSearchQuery, setPairSearchQuery] = useState('');
   const [isPairDropdownOpen, setIsPairDropdownOpen] = useState(false);
 
-  // 获取交易对、周期和readers数据
+  // Fetch trading pairs, intervals and readers data
   useEffect(() => {
     const fetchData = async () => {
       setLoadingPairs(true);
@@ -160,7 +160,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
     fetchData();
   }, []);
 
-  // 点击外部关闭下拉列表
+  // Click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -230,7 +230,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 基础信息 */}
+          {/* Basic Info */}
           <section>
             <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
               <div className="h-0.5 w-4 rounded-full bg-sky-500"></div>
@@ -282,7 +282,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
             </div>
           </section>
 
-          {/* 交易策略 */}
+          {/* Trading Strategy */}
           <section>
             <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
               <div className="h-0.5 w-4 rounded-full bg-purple-500"></div>
@@ -363,7 +363,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
             </div>
           </section>
 
-          {/* 交易参数 */}
+          {/* Trading Parameters */}
           <section>
             <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
               <div className="h-0.5 w-4 rounded-full bg-blue-500"></div>
@@ -452,7 +452,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
             </div>
           </section>
 
-          {/* 风险控制 */}
+          {/* Risk Control */}
           <section>
             <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
               <div className="h-0.5 w-4 rounded-full bg-red-500"></div>
@@ -562,7 +562,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
             </div>
           </section>
 
-          {/* 交易行为 */}
+          {/* Trading Behavior */}
           <section>
             <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
               <div className="h-0.5 w-4 rounded-full bg-emerald-500"></div>
@@ -589,14 +589,14 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
             </div>
           </section>
 
-          {/* 偏好设置 */}
+          {/* Preferences */}
           <section>
             <h3 className="mb-2 text-sm font-semibold text-white flex items-center gap-2">
               <div className="h-0.5 w-4 rounded-full bg-orange-500"></div>
               Preferences
             </h3>
             <div className="space-y-3">
-              {/* 交易对搜索选择 */}
+              {/* Trading pair search selection */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-300">
                   Preferred Trading Pair
@@ -621,7 +621,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                       </span>
                     </div>
                   )}
-                  {/* 清除按钮 */}
+                  {/* Clear button */}
                   {formData.preferredTradingPairId && (
                     <button
                       type="button"
@@ -634,7 +634,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                       <X className="h-4 w-4" />
                     </button>
                   )}
-                  {/* 下拉图标 */}
+                  {/* Dropdown icon */}
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                     <svg
                       className="h-4 w-4 text-gray-400"
@@ -651,7 +651,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                     </svg>
                   </div>
 
-                  {/* 下拉列表 */}
+                  {/* Dropdown list */}
                   {isPairDropdownOpen && (
                     <div className="absolute z-10 mt-1 w-full rounded-md bg-gray-800 border border-gray-700 shadow-lg max-h-60 overflow-auto scrollbar-thin">
                       {loadingPairs ? (
@@ -693,7 +693,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                 </div>
               </div>
 
-              {/* K线周期勾选 */}
+              {/* K-line interval selection */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-300">
                   Preferred Kline Intervals (15m+)
@@ -747,7 +747,7 @@ export default function EditTraderModal({ trader, onClose, onUpdate }: EditTrade
                 </p>
               </div>
 
-              {/* Reader多选 */}
+              {/* Reader multi-select */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-300">Data Readers</label>
                 {loadingReaders ? (

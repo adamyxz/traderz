@@ -3,7 +3,7 @@ import { optimizeKlineData, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
-// 输入验证
+// Input validation
 const intervalEnum = z.enum([
   '1s',
   '1m',
@@ -25,14 +25,14 @@ const intervalEnum = z.enum([
 
 const InputSchema = z.object({
   symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, {
-    message: '交易对格式错误，应为 BTCUSDT 格式',
+    message: 'Invalid trading pair format, expected BTCUSDT format',
   }),
   interval: intervalEnum,
   limit: z.number().int().min(1).max(1000).default(100),
   endTime: z.number().int().min(0).default(0),
 });
 
-// 简化的K线数据类型 - 只保留OHLCV
+// Simplified K-line data type - only keep OHLCV
 interface SimplifiedKline {
   ot: number; // openTime
   o: string; // open
@@ -42,18 +42,18 @@ interface SimplifiedKline {
   v: string; // volume
 }
 
-// 执行函数
+// Execute function
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function execute(input: ReaderInput, _context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
 
   try {
-    // 验证输入
+    // Validate input
     const { symbol, interval, limit, endTime } = InputSchema.parse(input);
 
     console.log(`[Reader] Fetching klines for ${symbol} ${interval}, limit: ${limit}`);
 
-    // 构建币安永续合约API请求
+    // Build Binance perpetual futures API request
     const baseUrl = 'https://fapi.binance.com/fapi/v1/continuousKlines';
     const params = new URLSearchParams({
       pair: symbol.toUpperCase(),
@@ -62,13 +62,13 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       limit: limit.toString(),
     });
 
-    // 如果指定了结束时间，添加到参数中
+    // If end time is specified, add to parameters
     const endTimeMs = endTime > 0 ? endTime : Date.now();
     params.append('endTime', endTimeMs.toString());
 
     const url = `${baseUrl}?${params.toString()}`;
 
-    // 调用币安API
+    // Call Binance API
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -78,13 +78,13 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`币安API请求失败: ${response.status} ${errorText}`);
+      throw new Error(`Binance API request failed: ${response.status} ${errorText}`);
     }
 
     const rawData = await response.json();
 
-    // 解析K线数据 - 只保留OHLCV字段
-    // 币安返回格式: [openTime, open, high, low, close, volume, closeTime, quoteVolume, trades, takerBuyBaseVolume, takerBuyQuoteVolume]
+    // Parse K-line data - only keep OHLCV fields
+    // Binance returns: [openTime, open, high, low, close, volume, closeTime, quoteVolume, trades, takerBuyBaseVolume, takerBuyQuoteVolume]
     const klines: SimplifiedKline[] = rawData.map((tick: (string | number)[]) => ({
       ot: tick[0],
       o: tick[1],
@@ -94,7 +94,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       v: tick[5],
     }));
 
-    // 应用5个优化方案：价格精度、相对时间戳等
+    // Apply 5 optimizations: price precision, relative timestamps, etc.
     const { baseTime, data: optimizedKlines } = optimizeKlineData(
       klines as unknown as Record<string, unknown>[],
       {
@@ -105,10 +105,10 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       }
     );
 
-    // 构建超紧凑CSV - 移除时间戳列, 行序隐含时间顺序
+    // Build ultra-compact CSV - remove timestamp column, row order implies time sequence
     const csvData = toCompactCSV(optimizedKlines, {
-      excludeColumns: ['dot'], // 移除相对时间戳
-      defaultValuePlaceholder: '', // 0值用空字符串表示
+      excludeColumns: ['dot'], // Remove relative timestamp
+      defaultValuePlaceholder: '', // Use empty string for 0 values
     });
 
     const result = {
@@ -138,7 +138,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
   }
 }
 
-// 参数验证
+// Parameter validation
 function validate(input: ReaderInput) {
   try {
     InputSchema.parse(input);
@@ -154,7 +154,7 @@ function validate(input: ReaderInput) {
   }
 }
 
-// 导出模块
+// Export module
 const readerModule: ReaderModule = {
   metadata: metadataJson as ReaderModule['metadata'],
   execute,

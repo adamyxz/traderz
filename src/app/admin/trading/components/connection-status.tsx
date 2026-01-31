@@ -12,25 +12,25 @@ export default function ConnectionStatus({ status }: ConnectionStatusProps) {
       case 'connected':
         return {
           color: 'bg-emerald-500',
-          text: '已连接',
+          text: 'Connected',
           textColor: 'text-emerald-400',
         };
       case 'connecting':
         return {
           color: 'bg-yellow-500',
-          text: '连接中',
+          text: 'Connecting',
           textColor: 'text-yellow-400',
         };
       case 'disconnected':
         return {
           color: 'bg-red-500',
-          text: '未连接',
+          text: 'Disconnected',
           textColor: 'text-red-400',
         };
       default:
         return {
           color: 'bg-gray-500',
-          text: '未知',
+          text: 'Unknown',
           textColor: 'text-gray-400',
         };
     }

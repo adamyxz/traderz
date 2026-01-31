@@ -338,7 +338,7 @@ export default function TradingChart({
       ws.onerror = (error) => {
         if (currentGeneration === wsGenerationRef.current) {
           console.error(`[TradingChart] WebSocket error (attempt ${attemptNumber + 1}):`, error);
-          setWsError('WebSocket 连接失败，请检查网络或代理设置');
+          setWsError('WebSocket connection failed. Please check your network or proxy settings.');
           onStatusChangeRef.current('disconnected');
         }
       };
@@ -367,7 +367,7 @@ export default function TradingChart({
             } else {
               // 3 attempts failed, notify parent to close the chart
               console.error('[TradingChart] Connection failed after 3 attempts, closing chart');
-              setWsError('连接失败，已自动关闭图表');
+              setWsError('Connection failed. Chart closed automatically.');
               onConnectionFailedRef.current?.();
             }
           }
@@ -431,7 +431,7 @@ export default function TradingChart({
         lineWidth: 2,
         lineStyle: 2, // Solid
         axisLabelVisible: true,
-        title: `${position.traderName} 开仓`,
+        title: `${position.traderName} Entry`,
       });
 
       // Stop loss line (red, dashed)
@@ -443,7 +443,7 @@ export default function TradingChart({
           lineWidth: 2,
           lineStyle: 3, // Dashed
           axisLabelVisible: true,
-          title: `${position.traderName} 止损`,
+          title: `${position.traderName} Stop`,
         });
       }
 
@@ -456,7 +456,7 @@ export default function TradingChart({
           lineWidth: 2,
           lineStyle: 3, // Dashed
           axisLabelVisible: true,
-          title: `${position.traderName} 止盈`,
+          title: `${position.traderName} Profit`,
         });
       }
 
@@ -485,21 +485,21 @@ export default function TradingChart({
       {/* Market Data Panel */}
       <div className="absolute left-4 top-4 z-10 flex gap-4 rounded-lg bg-gray-900/95 border border-gray-700/50 px-4 py-2 text-xs">
         <div className="flex flex-col">
-          <span className="text-gray-400">交易次数</span>
+          <span className="text-gray-400">Trades</span>
           <span className="text-lg font-semibold text-white">
             {marketData.trades.toLocaleString()}
           </span>
         </div>
         <div className="w-px bg-gray-700" />
         <div className="flex flex-col">
-          <span className="text-gray-400">主动买入量</span>
+          <span className="text-gray-400">Buy Volume</span>
           <span className="text-lg font-semibold text-emerald-400">
             {marketData.takerBuyVolume.toFixed(4)}
           </span>
         </div>
         <div className="w-px bg-gray-700" />
         <div className="flex flex-col">
-          <span className="text-gray-400">买入比例</span>
+          <span className="text-gray-400">Buy Ratio</span>
           <span
             className={`text-lg font-semibold ${
               marketData.takerBuyRatio >= 0.5 ? 'text-emerald-400' : 'text-red-400'
@@ -530,19 +530,19 @@ export default function TradingChart({
                   <div className="flex flex-col">
                     <span className="text-gray-400">{position.traderName}</span>
                     <span className="text-sm font-semibold text-white">
-                      {position.side === 'long' ? '做多' : '做空'}
+                      {position.side === 'long' ? 'Long' : 'Short'}
                     </span>
                   </div>
                   <div className="w-px bg-gray-700" />
                   <div className="flex flex-col">
-                    <span className="text-gray-400">开仓价</span>
+                    <span className="text-gray-400">Entry Price</span>
                     <span className="text-sm font-semibold text-blue-400">
                       {position.entryPrice.toFixed(2)}
                     </span>
                   </div>
                   <div className="w-px bg-gray-700" />
                   <div className="flex flex-col">
-                    <span className="text-gray-400">实时收益</span>
+                    <span className="text-gray-400">P&L</span>
                     <span
                       className={`text-sm font-semibold ${
                         realtimePnl >= 0 ? 'text-emerald-400' : 'text-red-400'
@@ -554,7 +554,7 @@ export default function TradingChart({
                   </div>
                   <div className="w-px bg-gray-700" />
                   <div className="flex flex-col">
-                    <span className="text-gray-400">仓位</span>
+                    <span className="text-gray-400">Position</span>
                     <span className="text-sm font-semibold text-sky-400">
                       {position.positionSize.toFixed(0)} USDT
                     </span>
@@ -571,7 +571,7 @@ export default function TradingChart({
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <div className="flex items-center gap-2 rounded-lg bg-gray-800/90 px-4 py-2 text-white">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
-            <span>加载中...</span>
+            <span>Loading...</span>
           </div>
         </div>
       )}
@@ -581,13 +581,13 @@ export default function TradingChart({
         <div className="absolute left-1/2 top-1/2 z-10 flex w-full max-w-lg -translate-x-1/2 -translate-y-1/2">
           <div className="w-full rounded-lg bg-red-500/10 border border-red-500/50 p-6 text-center">
             <p className="mb-2 text-lg font-semibold text-red-400">
-              {wsError ? 'WebSocket 连接失败' : '数据加载失败'}
+              {wsError ? 'WebSocket Connection Failed' : 'Data Loading Failed'}
             </p>
             <p className="text-sm text-gray-300">{wsError || error}</p>
             <p className="mt-4 text-xs text-gray-400">
               {wsError
-                ? '提示：WebSocket 连接失败。请确保 Clash 已切换到全局模式，或检查网络连接。'
-                : '提示：Binance API 在某些地区可能受到限制。请尝试使用 VPN 或代理服务器访问。'}
+                ? 'Tip: WebSocket connection failed. Please ensure Clash is in global mode, or check your network connection.'
+                : 'Tip: Binance API may be restricted in some regions. Please try using a VPN or proxy server.'}
             </p>
           </div>
         </div>

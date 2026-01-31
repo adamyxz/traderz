@@ -127,10 +127,10 @@ export default function ChartCard({
             />
             <span className="text-xs text-gray-400">
               {config.connectionStatus === 'connected'
-                ? '已连接'
+                ? 'Connected'
                 : config.connectionStatus === 'connecting'
-                  ? '连接中'
-                  : '未连接'}
+                  ? 'Connecting'
+                  : 'Disconnected'}
             </span>
           </div>
         </div>
@@ -140,7 +140,7 @@ export default function ChartCard({
           <button
             onClick={handleFullscreen}
             className="rounded p-1 text-gray-400 hover:text-white transition-colors"
-            title={isFullscreen ? '退出全屏' : '全屏'}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
             <Maximize2 className="h-4 w-4" />
           </button>
@@ -150,7 +150,7 @@ export default function ChartCard({
             <button
               onClick={handleDelete}
               className="rounded p-1 text-gray-400 hover:text-red-400 transition-colors"
-              title="删除"
+              title="Delete"
             >
               <X className="h-4 w-4" />
             </button>

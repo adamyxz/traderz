@@ -3,47 +3,47 @@ import { trimPrice } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
-// 输入验证 Schema
+// Input validation schema
 const InputSchema = z.object({
   symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, {
-    message: '交易对格式错误，应为 BTCUSDT 格式',
+    message: 'Invalid trading pair format, expected BTCUSDT format',
   }),
   limit: z
     .number()
     .int()
     .refine((val) => [5, 10, 20, 50, 100, 500, 1000].includes(val), {
-      message: 'limit 必须是 5, 10, 20, 50, 100, 500, 1000 之一',
+      message: 'limit must be one of 5, 10, 20, 50, 100, 500, 1000',
     })
     .default(500),
 });
 
-// 币安订单簿深度响应类型
+// Binance order book depth response type
 interface BinanceDepthResponse {
   lastUpdateId: number;
-  E: number; // 事件时间
-  T: number; // 撮合引擎时间
-  bids: [string, string][]; // [价格, 数量]
-  asks: [string, string][]; // [价格, 数量]
+  E: number; // event time
+  T: number; // trade engine time
+  bids: [string, string][]; // [price, quantity]
+  asks: [string, string][]; // [price, quantity]
 }
 
-// 简化的订单档位类型
+// Simplified price level type
 interface PriceLevel {
   p: string; // price
   q: string; // quantity
 }
 
-// 执行函数
+// Execute function
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function execute(input: ReaderInput, _context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
 
   try {
-    // 验证输入
+    // Validate input
     const { symbol, limit } = InputSchema.parse(input);
 
     console.log(`[Reader] Fetching order book depth for ${symbol}, limit: ${limit}`);
 
-    // 构建币安永续合约API请求
+    // Build Binance perpetual futures API request
     const baseUrl = 'https://fapi.binance.com/fapi/v1/depth';
     const params = new URLSearchParams();
     params.append('symbol', symbol.toUpperCase());
@@ -51,7 +51,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     const url = `${baseUrl}?${params.toString()}`;
 
-    // 调用币安API
+    // Call Binance API
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -61,41 +61,41 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`币安API请求失败: ${response.status} ${errorText}`);
+      throw new Error(`Binance API request failed: ${response.status} ${errorText}`);
     }
 
     const rawData = (await response.json()) as BinanceDepthResponse;
 
-    // 解析并优化订单簿数据
-    // 买单 (bids) - 按价格降序排列
+    // Parse and optimize order book data
+    // Bids (buy orders) - sorted by price descending
     const bids: PriceLevel[] = rawData.bids.map(([price, quantity]) => ({
       p: trimPrice(price),
       q: trimPrice(quantity),
     }));
 
-    // 卖单 (asks) - 按价格升序排列
+    // Asks (sell orders) - sorted by price ascending
     const asks: PriceLevel[] = rawData.asks.map(([price, quantity]) => ({
       p: trimPrice(price),
       q: trimPrice(quantity),
     }));
 
-    // 构建 CSV 数据
-    // 格式: type,p,q (type=1为买单, type=0为卖单)
+    // Build CSV data
+    // Format: type,p,q (type=1 for bids, type=0 for asks)
     const csvRows: string[] = [];
 
-    // 添加买单 (type=1)
+    // Add bids (type=1)
     bids.forEach(({ p, q }) => {
       csvRows.push(`1,${p},${q}`);
     });
 
-    // 添加卖单 (type=0)
+    // Add asks (type=0)
     asks.forEach(({ p, q }) => {
       csvRows.push(`0,${p},${q}`);
     });
 
     const csvData = `type,p,q\n${csvRows.join('\n')}`;
 
-    // 返回标准格式
+    // Return standard format
     return {
       success: true,
       data: {
@@ -119,7 +119,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
   }
 }
 
-// 参数验证
+// Parameter validation
 function validate(input: ReaderInput) {
   try {
     InputSchema.parse(input);
@@ -135,7 +135,7 @@ function validate(input: ReaderInput) {
   }
 }
 
-// 导出模块
+// Export module
 const readerModule: ReaderModule = {
   metadata: metadataJson as ReaderModule['metadata'],
   execute,

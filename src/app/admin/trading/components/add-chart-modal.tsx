@@ -54,17 +54,17 @@ export default function AddChartModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-[400px] rounded-lg border border-gray-700 bg-gray-900 p-6 shadow-xl">
-        <h3 className="mb-4 text-lg font-medium text-white">添加图表</h3>
+        <h3 className="mb-4 text-lg font-medium text-white">Add Chart</h3>
 
         <div className="space-y-4">
           {/* Trading Pair Search */}
           <div>
-            <label className="mb-2 block text-sm text-gray-400">交易对</label>
+            <label className="mb-2 block text-sm text-gray-400">Trading Pair</label>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索交易对..."
+              placeholder="Search trading pair..."
               className="
                 mb-2 w-full rounded border border-gray-700 bg-gray-800
                 px-3 py-2 text-sm text-white placeholder-gray-500
@@ -87,7 +87,7 @@ export default function AddChartModal({
                 ))
               ) : (
                 <option value="" disabled>
-                  无匹配结果
+                  No matching results
                 </option>
               )}
             </select>
@@ -95,7 +95,7 @@ export default function AddChartModal({
 
           {/* Interval Selector */}
           <div>
-            <label className="mb-2 block text-sm text-gray-400">周期</label>
+            <label className="mb-2 block text-sm text-gray-400">Interval</label>
             <select
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
@@ -119,13 +119,13 @@ export default function AddChartModal({
             onClick={handleCancel}
             className="rounded-lg px-4 py-2 text-sm text-gray-400 hover:bg-gray-800 transition-colors"
           >
-            取消
+            Cancel
           </button>
           <button
             onClick={handleConfirm}
             className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600 transition-colors"
           >
-            确认
+            Confirm
           </button>
         </div>
       </div>

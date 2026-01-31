@@ -1,6 +1,6 @@
 {
   "name": "kline-fetcher",
-  "description": "从币安永续合约获取历史K线数据，返回指定交易对和时间周期的OHLCV数据（连续合约）",
+  "description": "Fetches historical candlestick (K-line) data from Binance perpetual futures. Output includes OHLCV data in compact CSV format: Open price, High price, Low price, Close price, Volume, and quote volume. Data is optimized with relative timestamps and compact representation for LLM token efficiency. Essential for technical analysis, price action patterns, and market trend identification. Uses continuous contracts for accurate historical analysis.",
   "standardParameters": {
     "symbol": "symbol",
     "interval": "interval"
@@ -9,8 +9,8 @@
     {
       "name": "symbol",
       "type": "string",
-      "displayName": "交易对",
-      "description": "币安交易对符号，如 BTCUSDT",
+      "displayName": "Trading Pair",
+      "description": "Binance trading pair symbol (e.g., BTCUSDT)",
       "required": true,
       "validation": {
         "pattern": "^[A-Z]{2,20}USDT$"
@@ -19,8 +19,8 @@
     {
       "name": "interval",
       "type": "enum",
-      "displayName": "K线周期",
-      "description": "K线时间周期",
+      "displayName": "K-line Interval",
+      "description": "Time interval for each candlestick",
       "required": true,
       "validation": {
         "enum": [
@@ -46,8 +46,8 @@
     {
       "name": "limit",
       "type": "number",
-      "displayName": "K线数量",
-      "description": "获取的K线根数，最大1000",
+      "displayName": "K-line Limit",
+      "description": "Number of candlesticks to retrieve (max 1000)",
       "required": false,
       "defaultValue": 100,
       "validation": {
@@ -58,8 +58,8 @@
     {
       "name": "endTime",
       "type": "number",
-      "displayName": "结束时间戳",
-      "description": "结束时间的毫秒时间戳，不填则使用当前时间",
+      "displayName": "End Timestamp",
+      "description": "End time in milliseconds since epoch (defaults to current time if not specified)",
       "required": false,
       "defaultValue": 0,
       "validation": {

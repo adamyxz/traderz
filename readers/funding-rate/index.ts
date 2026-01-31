@@ -3,19 +3,19 @@ import { toRelativeTimestamps, trimPrice, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
-// 输入验证
+// Input validation
 const InputSchema = z.object({
   symbol: z
     .string()
     .regex(/^$|^[A-Z]{2,20}USDT$/, {
-      message: '交易对格式错误，应为 BTCUSDT 格式或留空',
+      message: 'Invalid trading pair format, expected BTCUSDT format or leave empty',
     })
     .optional()
     .default(''),
   limit: z.coerce.number().min(1).max(1000).optional().default(100),
 });
 
-// 资金费率历史类型
+// Funding rate history type
 interface FundingRateInfo {
   T: number; // fundingTime
   s: string; // symbol
@@ -23,32 +23,32 @@ interface FundingRateInfo {
   mp: string; // markPrice
 }
 
-// 执行函数
+// Execute function
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function execute(input: ReaderInput, _context: ReaderContext): Promise<ReaderOutput> {
   const startTime = Date.now();
 
   try {
-    // 验证输入
+    // Validate input
     const { symbol, limit } = InputSchema.parse(input);
 
     console.log(`[Reader] Fetching funding rate history${symbol ? ' for ' + symbol : ''}`);
 
-    // 构建币安API请求
+    // Build Binance API request
     const baseUrl = 'https://fapi.binance.com/fapi/v1/fundingRate';
     const params = new URLSearchParams();
 
-    // 如果指定了 symbol，添加到参数中
+    // If symbol is specified, add to parameters
     if (symbol && symbol.trim() !== '') {
       params.append('symbol', symbol.toUpperCase());
     }
 
-    // 添加 limit 参数
+    // Add limit parameter
     params.append('limit', limit.toString());
 
     const url = `${baseUrl}?${params.toString()}`;
 
-    // 调用币安API
+    // Call Binance API
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -58,12 +58,12 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`币安API请求失败: ${response.status} ${errorText}`);
+      throw new Error(`Binance API request failed: ${response.status} ${errorText}`);
     }
 
     const rawData = await response.json();
 
-    // 解析资金费率历史数据
+    // Parse funding rate history data
     const fundingRates: FundingRateInfo[] = rawData.map(
       (item: { symbol: string; fundingRate: string; fundingTime: number; markPrice: string }) => ({
         T: item.fundingTime,
@@ -73,7 +73,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       })
     );
 
-    // 如果没有数据，返回空结果
+    // If no data, return empty result
     if (fundingRates.length === 0) {
       return {
         success: true,
@@ -90,21 +90,21 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       };
     }
 
-    // 应用相对时间戳优化
+    // Apply relative timestamp optimization
     const { baseTime, records: optimizedData } = toRelativeTimestamps(
       fundingRates as unknown as Record<string, unknown>[],
       'T'
     );
 
-    // 验证优化后的数据
+    // Validate optimized data
     if (!optimizedData || !Array.isArray(optimizedData)) {
-      throw new Error('数据优化失败');
+      throw new Error('Data optimization failed');
     }
 
-    // 构建超紧凑CSV - 移除时间戳和交易对列
+    // Build ultra-compact CSV - remove timestamp and symbol columns
     const csvData = toCompactCSV(optimizedData, {
-      excludeColumns: ['dT', 's'], // 移除相对时间戳和交易对
-      defaultValuePlaceholder: '', // 0值用空字符串表示
+      excludeColumns: ['dT', 's'], // Remove relative timestamp and symbol
+      defaultValuePlaceholder: '', // Use empty string for 0 values
     });
 
     const result = {
@@ -133,7 +133,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
   }
 }
 
-// 参数验证
+// Parameter validation
 function validate(input: ReaderInput) {
   try {
     InputSchema.parse(input);
@@ -149,7 +149,7 @@ function validate(input: ReaderInput) {
   }
 }
 
-// 导出模块
+// Export module
 const readerModule: ReaderModule = {
   metadata: metadataJson as ReaderModule['metadata'],
   execute,

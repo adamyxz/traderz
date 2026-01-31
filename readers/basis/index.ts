@@ -3,37 +3,41 @@ import { toRelativeTimestamps, trimPrice, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
-// 输入验证
+// Input validation
 const periodEnum = z.enum(['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d']);
 
 const InputSchema = z.object({
-  symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, { message: '交易对格式错误，应为 BTCUSDT 格式' }),
+  symbol: z
+    .string()
+    .regex(/^[A-Z]{2,20}USDT$/, {
+      message: 'Invalid trading pair format, expected BTCUSDT format',
+    }),
   period: periodEnum,
   limit: z.number().int().min(1).max(500).default(30),
   startTime: z.number().int().min(0).optional(),
   endTime: z.number().int().min(0).optional(),
 });
 
-// 简化的基差数据
+// Simplified basis data
 interface SimplifiedBasis {
   T: number; // timestamp
-  b: string; // basis (基差)
-  r: string; // basisRate (基差率)
-  p: string; // indexPrice (指数价格)
-  f: string; // futuresPrice (合约价格)
+  b: string; // basis
+  r: string; // basisRate
+  p: string; // indexPrice
+  f: string; // futuresPrice
 }
 
-// 执行函数
+// Execute function
 async function execute(input: ReaderInput): Promise<ReaderOutput> {
   const startTime = Date.now();
 
   try {
-    // 验证输入
+    // Validate input
     const { symbol, period, limit, startTime: startTs, endTime: endTs } = InputSchema.parse(input);
 
     console.log(`[Reader] Fetching basis data for ${symbol} ${period}, limit: ${limit}`);
 
-    // 构建币安永续合约API请求
+    // Build Binance perpetual futures API request
     const baseUrl = 'https://fapi.binance.com/futures/data/basis';
     const params = new URLSearchParams({
       pair: symbol.toUpperCase(),
@@ -51,7 +55,7 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
 
     const url = `${baseUrl}?${params.toString()}`;
 
-    // 调用币安API
+    // Call Binance API
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -61,12 +65,12 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`币安API请求失败: ${response.status} ${errorText}`);
+      throw new Error(`Binance API request failed: ${response.status} ${errorText}`);
     }
 
     const rawData = await response.json();
 
-    // 验证返回数据格式 - basis API 可能返回包含 data 字段的对象
+    // Validate returned data format - basis API may return object with data field
     let dataArray: unknown[] = [];
     if (Array.isArray(rawData)) {
       dataArray = rawData;
@@ -79,22 +83,22 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
       dataArray = rawData.data;
     } else {
       throw new Error(
-        `API返回数据格式错误: 期望数组或包含data字段的对象, 实际 ${JSON.stringify(rawData).slice(0, 200)}`
+        `API returned data format error: expected array or object with data field, got ${JSON.stringify(rawData).slice(0, 200)}`
       );
     }
 
     if (dataArray.length === 0) {
-      throw new Error('API未返回任何数据');
+      throw new Error('API returned no data');
     }
 
-    // 解析数据 - 简化字段名
+    // Parse data - simplify field names
     const data: SimplifiedBasis[] = dataArray.map((item: unknown, idx: number) => {
       if (!item || typeof item !== 'object') {
-        throw new Error(`数据项 ${idx} 格式错误`);
+        throw new Error(`Data item ${idx} format error`);
       }
       const record = item as Record<string, unknown>;
       if (!record.timestamp) {
-        throw new Error(`数据项 ${idx} 缺少 timestamp 字段`);
+        throw new Error(`Data item ${idx} missing timestamp field`);
       }
       return {
         T: Number(record.timestamp),
@@ -105,21 +109,21 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
       };
     });
 
-    // 应用相对时间戳优化
+    // Apply relative timestamp optimization
     const { baseTime, records: optimizedData } = toRelativeTimestamps(
       data as unknown as Record<string, unknown>[],
       'T'
     );
 
-    // 验证优化后的数据
+    // Validate optimized data
     if (!optimizedData || !Array.isArray(optimizedData)) {
-      throw new Error('数据优化失败');
+      throw new Error('Data optimization failed');
     }
 
-    // 构建超紧凑CSV - 移除时间戳列, 行序隐含时间顺序
+    // Build ultra-compact CSV - remove timestamp column, row order implies time sequence
     const csvData = toCompactCSV(optimizedData, {
-      excludeColumns: ['dT'], // 移除相对时间戳
-      defaultValuePlaceholder: '', // 0值用空字符串表示
+      excludeColumns: ['dT'], // Remove relative timestamp
+      defaultValuePlaceholder: '', // Use empty string for 0 values
     });
 
     const result = {
@@ -149,7 +153,7 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
   }
 }
 
-// 参数验证
+// Parameter validation
 function validate(input: ReaderInput) {
   try {
     InputSchema.parse(input);
@@ -165,7 +169,7 @@ function validate(input: ReaderInput) {
   }
 }
 
-// 导出模块
+// Export module
 const readerModule: ReaderModule = {
   metadata: metadataJson as ReaderModule['metadata'],
   execute,

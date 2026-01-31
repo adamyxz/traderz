@@ -1,6 +1,6 @@
 {
   "name": "top-trader-ls-account-ratio",
-  "description": "获取大户账户数多空比数据。大户指保证金余额排名前20%的用户，数据包含大户多空账户数比值、多仓账户数比例、空仓账户数比例",
+  "description": "Fetches long/short account ratio for top traders (top 20% by margin balance) from Binance futures. This metric shows how large, sophisticated traders are positioning themselves. Output includes: long/short account ratio, percentage of top trader accounts with long positions, and percentage with short positions. Top traders are considered 'smart money' - their positioning often signals market direction. A ratio > 1 indicates top traders are net long, while < 1 indicates net short positioning.",
   "standardParameters": {
     "symbol": "symbol",
     "interval": "period"
@@ -9,8 +9,8 @@
     {
       "name": "symbol",
       "type": "string",
-      "displayName": "交易对",
-      "description": "币安交易对符号，如 BTCUSDT",
+      "displayName": "Trading Pair",
+      "description": "Binance trading pair symbol (e.g., BTCUSDT)",
       "required": true,
       "validation": {
         "pattern": "^[A-Z]{2,20}USDT$"
@@ -19,8 +19,8 @@
     {
       "name": "period",
       "type": "enum",
-      "displayName": "时间周期",
-      "description": "数据的时间周期",
+      "displayName": "Time Period",
+      "description": "Time interval for data aggregation",
       "required": true,
       "validation": {
         "enum": ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
@@ -29,8 +29,8 @@
     {
       "name": "limit",
       "type": "number",
-      "displayName": "数据条数",
-      "description": "获取的数据条数，最大500",
+      "displayName": "Data Limit",
+      "description": "Number of data points to retrieve (max 500)",
       "required": false,
       "defaultValue": 30,
       "validation": {
@@ -41,8 +41,8 @@
     {
       "name": "startTime",
       "type": "number",
-      "displayName": "开始时间戳",
-      "description": "开始时间的毫秒时间戳",
+      "displayName": "Start Timestamp",
+      "description": "Start time in milliseconds since epoch",
       "required": false,
       "validation": {
         "min": 0
@@ -51,8 +51,8 @@
     {
       "name": "endTime",
       "type": "number",
-      "displayName": "结束时间戳",
-      "description": "结束时间的毫秒时间戳",
+      "displayName": "End Timestamp",
+      "description": "End time in milliseconds since epoch",
       "required": false,
       "validation": {
         "min": 0

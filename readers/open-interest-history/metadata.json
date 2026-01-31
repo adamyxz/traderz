@@ -1,6 +1,6 @@
 {
   "name": "open-interest-history",
-  "description": "从币安永续合约获取历史持仓量(Open Interest)数据，显示市场未平仓合约数量的变化趋势",
+  "description": "Retrieves historical open interest data from Binance perpetual futures. Open interest represents the total number of outstanding derivative contracts that have not been settled. Output includes: timestamp, open interest value, and open interest USD value. This metric is crucial for understanding market liquidity, potential trend reversals, and the strength of price movements. Rising open interest with rising price suggests an uptrend with new money entering the market.",
   "standardParameters": {
     "symbol": "symbol",
     "interval": "period"
@@ -9,8 +9,8 @@
     {
       "name": "symbol",
       "type": "string",
-      "displayName": "交易对",
-      "description": "币安交易对符号，如 BTCUSDT",
+      "displayName": "Trading Pair",
+      "description": "Binance trading pair symbol (e.g., BTCUSDT)",
       "required": true,
       "validation": {
         "pattern": "^[A-Z]{2,20}USDT$"
@@ -19,8 +19,8 @@
     {
       "name": "period",
       "type": "enum",
-      "displayName": "时间周期",
-      "description": "持仓量数据的时间聚合周期",
+      "displayName": "Time Period",
+      "description": "Time aggregation interval for open interest data",
       "required": false,
       "defaultValue": "5m",
       "validation": {
@@ -30,8 +30,8 @@
     {
       "name": "limit",
       "type": "number",
-      "displayName": "数据条数",
-      "description": "获取的数据条数，最大500",
+      "displayName": "Data Limit",
+      "description": "Number of data points to retrieve (max 500)",
       "required": false,
       "defaultValue": 100,
       "validation": {
@@ -42,8 +42,8 @@
     {
       "name": "endTime",
       "type": "number",
-      "displayName": "结束时间戳",
-      "description": "结束时间的毫秒时间戳，不填则使用当前时间",
+      "displayName": "End Timestamp",
+      "description": "End time in milliseconds since epoch (defaults to current time if not specified)",
       "required": false,
       "defaultValue": 0,
       "validation": {

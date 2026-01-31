@@ -21,7 +21,7 @@ export default function ReadersAdminPage() {
 
   useEffect(() => {
     fetchReaders();
-    // 首次加载时自动同步readers
+    // Auto-sync readers on initial load
     syncReadersSilently();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -59,7 +59,7 @@ export default function ReadersAdminPage() {
       setDeletingReaderId(null);
     } catch (error) {
       console.error('Error deleting reader:', error);
-      alert('删除失败');
+      alert('Delete failed');
     }
   };
 
@@ -180,23 +180,21 @@ export default function ReadersAdminPage() {
                   <div className="flex gap-2 border-t border-gray-700 pt-3">
                     <button
                       onClick={() => setTestingReader(reader)}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600/20 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-600/30"
+                      className="flex flex-1 items-center justify-center rounded-lg bg-emerald-600/20 px-3 py-2 text-emerald-400 transition-colors hover:bg-emerald-600/30"
                     >
-                      <Play className="h-3 w-3" />
-                      Test
+                      <Play className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => setEditingReader(reader)}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-600/20 px-3 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-600/30"
+                      className="flex flex-1 items-center justify-center rounded-lg bg-sky-600/20 px-3 py-2 text-sky-400 transition-colors hover:bg-sky-600/30"
                     >
-                      <Edit className="h-3 w-3" />
-                      Edit
+                      <Edit className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => setDeletingReaderId(reader.id)}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-600/20 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/30"
+                      className="flex flex-1 items-center justify-center rounded-lg bg-red-600/20 px-3 py-2 text-red-400 transition-colors hover:bg-red-600/30"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -346,7 +344,9 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full rounded-lg border border-gray-600 bg-gray-700/50 px-4 py-2.5 text-white focus:border-sky-500 focus:outline-none"
             />
-            <p className="mt-1 text-xs text-gray-500">修改名称会重命名文件夹和metadata.json</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Changing the name will rename the folder and metadata.json
+            </p>
           </div>
 
           <div>
@@ -356,9 +356,11 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
               className="w-full rounded-lg border border-gray-600 bg-gray-700/50 px-4 py-2.5 text-white focus:border-sky-500 focus:outline-none"
-              placeholder="Reader功能描述..."
+              placeholder="Reader functionality description..."
             />
-            <p className="mt-1 text-xs text-gray-500">修改描述会同步到metadata.json</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Changing the description will sync to metadata.json
+            </p>
           </div>
 
           <div>

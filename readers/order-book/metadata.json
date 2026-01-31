@@ -1,6 +1,6 @@
 {
   "name": "order-book",
-  "description": "从币安永续合约获取订单簿深度数据，返回指定交易对的买单(bids)和卖单(asks)深度信息",
+  "description": "Fetches real-time order book depth data from Binance perpetual futures. Output includes bid orders (buy orders at various price levels) and ask orders (sell orders at various price levels). Each level contains price and quantity. The order book provides insight into market depth, supply and demand levels, and potential support/resistance zones. Useful for identifying liquidity concentrations, market making strategies, and short-term price movements. Data is returned in compact CSV format with abbreviated column names for efficiency.",
   "standardParameters": {
     "symbol": "symbol"
   },
@@ -8,8 +8,8 @@
     {
       "name": "symbol",
       "type": "string",
-      "displayName": "交易对",
-      "description": "币安交易对符号，如 BTCUSDT",
+      "displayName": "Trading Pair",
+      "description": "Binance trading pair symbol (e.g., BTCUSDT)",
       "required": true,
       "validation": {
         "pattern": "^[A-Z]{2,20}USDT$"
@@ -18,8 +18,8 @@
     {
       "name": "limit",
       "type": "number",
-      "displayName": "深度档位",
-      "description": "返回的深度档位数，可选值: 5, 10, 20, 50, 100, 500, 1000",
+      "displayName": "Depth Levels",
+      "description": "Number of price levels to return. Options: 5, 10, 20, 50, 100, 500, or 1000",
       "required": false,
       "defaultValue": 500,
       "validation": {

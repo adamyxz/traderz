@@ -41,12 +41,12 @@ export default function TradingControls({
         `}
       >
         {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-        {isRunning ? '停止' : '启动'}
+        {isRunning ? 'Stop' : 'Start'}
       </button>
 
       {/* Trading Pair Selector */}
       <div className="flex items-center gap-2">
-        <label className="text-sm text-gray-400">交易对:</label>
+        <label className="text-sm text-gray-400">Pair:</label>
         <select
           value={selectedPair}
           onChange={(e) => onPairChange(e.target.value)}
@@ -66,7 +66,7 @@ export default function TradingControls({
 
       {/* Interval Selector */}
       <div className="flex items-center gap-2">
-        <label className="text-sm text-gray-400">周期:</label>
+        <label className="text-sm text-gray-400">Interval:</label>
         <select
           value={selectedInterval}
           onChange={(e) => onIntervalChange(e.target.value)}

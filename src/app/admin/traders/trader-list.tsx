@@ -10,9 +10,9 @@ interface TraderListProps {
 }
 
 const statusLabels = {
-  enabled: '运行中',
-  disabled: '已禁用',
-  paused: '已暂停',
+  enabled: 'Running',
+  disabled: 'Disabled',
+  paused: 'Paused',
 };
 
 const statusStyles = {
@@ -22,12 +22,12 @@ const statusStyles = {
 };
 
 const strategyLabels = {
-  trend: '趋势',
-  oscillation: '震荡',
-  arbitrage: '套利',
-  market_making: '做市',
-  scalping: '剥头皮',
-  swing: '波段',
+  trend: 'Trend',
+  oscillation: 'Oscillation',
+  arbitrage: 'Arbitrage',
+  market_making: 'Market Making',
+  scalping: 'Scalping',
+  swing: 'Swing',
 };
 
 export default function TraderList({ traders }: TraderListProps) {
@@ -40,7 +40,7 @@ export default function TraderList({ traders }: TraderListProps) {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('确定要删除这个交易员吗？')) return;
+    if (!confirm('Are you sure you want to delete this trader?')) return;
 
     try {
       const response = await fetch(`/api/traders/${id}`, {
@@ -50,11 +50,11 @@ export default function TraderList({ traders }: TraderListProps) {
       if (response.ok) {
         window.location.reload();
       } else {
-        alert('删除失败');
+        alert('Delete failed');
       }
     } catch (error) {
       console.error('Error deleting trader:', error);
-      alert('删除失败');
+      alert('Delete failed');
     }
   };
 
@@ -64,8 +64,10 @@ export default function TraderList({ traders }: TraderListProps) {
         <div className="mb-4 rounded-full bg-slate-800 p-4">
           <AlertCircle className="h-12 w-12 text-slate-600" />
         </div>
-        <p className="text-lg font-medium text-white">暂无交易员数据</p>
-        <p className="mt-2 text-slate-400">点击右上角&ldquo;新建交易员&rdquo;开始创建</p>
+        <p className="text-lg font-medium text-white">No traders found</p>
+        <p className="mt-2 text-slate-400">
+          Click &ldquo;New Trader&rdquo; in the top right to create one
+        </p>
       </div>
     );
   }
@@ -91,7 +93,7 @@ export default function TraderList({ traders }: TraderListProps) {
             <div className="mb-4">
               <h3 className="text-xl font-bold text-white">{trader.name}</h3>
               <p className="mt-1 text-sm text-slate-400 line-clamp-2">
-                {trader.description || '暂无描述'}
+                {trader.description || 'No description'}
               </p>
             </div>
 
@@ -100,7 +102,7 @@ export default function TraderList({ traders }: TraderListProps) {
               <div className="rounded-lg bg-slate-800/50 p-3">
                 <div className="flex items-center gap-2 text-slate-400">
                   <TrendingUp className="h-4 w-4" />
-                  <span className="text-xs">激进程度</span>
+                  <span className="text-xs">Aggressiveness</span>
                 </div>
                 <p className="mt-1 text-lg font-semibold text-white">
                   {trader.aggressivenessLevel}
@@ -110,7 +112,7 @@ export default function TraderList({ traders }: TraderListProps) {
               <div className="rounded-lg bg-slate-800/50 p-3">
                 <div className="flex items-center gap-2 text-slate-400">
                   <AlertCircle className="h-4 w-4" />
-                  <span className="text-xs">风险偏好</span>
+                  <span className="text-xs">Risk Preference</span>
                 </div>
                 <p className="mt-1 text-lg font-semibold text-white">
                   {trader.riskPreferenceScore}
@@ -122,15 +124,15 @@ export default function TraderList({ traders }: TraderListProps) {
             {/* Details */}
             <div className="space-y-2 border-t border-slate-800 pt-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">最大杠杆</span>
+                <span className="text-slate-400">Max Leverage</span>
                 <span className="font-medium text-white">{trader.maxLeverage}x</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">最大回撤</span>
+                <span className="text-slate-400">Max Drawdown</span>
                 <span className="font-medium text-white">{trader.maxDrawdown}%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">交易策略</span>
+                <span className="text-slate-400">Strategy</span>
                 <span className="font-medium text-white">
                   {strategyLabels[trader.tradingStrategy]}
                 </span>
@@ -144,14 +146,14 @@ export default function TraderList({ traders }: TraderListProps) {
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
               >
                 <Edit className="h-4 w-4" />
-                编辑
+                Edit
               </button>
               <button
                 onClick={() => handleDelete(trader.id)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
               >
                 <Trash2 className="h-4 w-4" />
-                删除
+                Delete
               </button>
             </div>
           </div>

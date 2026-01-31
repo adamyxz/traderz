@@ -247,7 +247,7 @@ export default function MultiChartContainer({
             </svg>
           </div>
           <span className="mt-3 text-sm text-gray-500 transition-colors group-hover:text-gray-400">
-            添加图表
+            Add Chart
           </span>
         </button>
       </div>
