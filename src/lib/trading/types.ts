@@ -46,7 +46,7 @@ export interface ChartPositionData {
   stopLossPrice: number | null;
   takeProfitPrice: number | null;
   positionSize: number;
-  returnRate: number;
+  unrealizedPnl: number; // 未实现盈亏
   side: 'long' | 'short';
 }
 

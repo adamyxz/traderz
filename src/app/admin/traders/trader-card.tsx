@@ -20,6 +20,7 @@ import {
   Briefcase,
   Heart,
   BookOpen,
+  Sparkles,
 } from 'lucide-react';
 import type { Trader } from '@/db/schema';
 
@@ -55,6 +56,8 @@ interface TraderCardProps {
   onViewPositions?: () => void;
   isSelected?: boolean;
   onToggleSelect?: () => void;
+  onOptimize?: () => void;
+  isOptimizing?: boolean;
 }
 
 const statusConfig = {
@@ -99,6 +102,8 @@ export default function TraderCard({
   onViewPositions,
   isSelected = false,
   onToggleSelect,
+  onOptimize,
+  isOptimizing = false,
 }: TraderCardProps) {
   const [isActive, setIsActive] = useState(false);
   const [isHeartbeating, setIsHeartbeating] = useState(false);
@@ -396,6 +401,25 @@ export default function TraderCard({
               >
                 <Heart className={`h-4 w-4 ${isHeartbeating ? 'animate-pulse' : ''}`} />
               </button>
+
+              {/* Optimize Button */}
+              {onOptimize && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOptimize();
+                  }}
+                  disabled={isOptimizing}
+                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
+                    isOptimizing
+                      ? 'bg-purple-500/30 text-purple-400 animate-pulse'
+                      : 'bg-gray-700/50 text-gray-400 hover:bg-purple-500/20 hover:text-purple-400'
+                  }`}
+                  title={isOptimizing ? 'Optimizing...' : 'AI Optimize Trader'}
+                >
+                  <Sparkles className={`h-4 w-4 ${isOptimizing ? 'animate-spin' : ''}`} />
+                </button>
+              )}
 
               {/* Positions Button */}
               {onViewPositions && (

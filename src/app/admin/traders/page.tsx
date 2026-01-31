@@ -92,6 +92,7 @@ export default function TradersAdminPage() {
   const [deletingTraderId, setDeletingTraderId] = useState<number | null>(null);
   const [selectedTraderIds, setSelectedTraderIds] = useState<Set<number>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [optimizingTraderIds, setOptimizingTraderIds] = useState<Set<number>>(new Set());
 
   // Track if component is mounted to prevent state updates after unmount
   const isMounted = useRef(true);
@@ -303,6 +304,56 @@ export default function TradersAdminPage() {
     router.push(`/admin/positions?traderId=${traderId}`);
   };
 
+  const handleOptimizeTrader = async (traderId: number) => {
+    try {
+      setOptimizingTraderIds((prev) => new Set([...prev, traderId]));
+
+      const response = await fetch(`/api/traders/${traderId}/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: false }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Optimization failed');
+      }
+
+      const result = await response.json();
+
+      // Show success message with summary
+      const changes = JSON.parse(result.data.appliedChanges);
+      const changeCount = Object.keys(changes).length;
+
+      // Create a more user-friendly success message
+      let message = `Optimization complete!\n\n${result.data.reasoning}\n\n`;
+
+      if (changeCount > 0) {
+        message += `Applied ${changeCount} change${changeCount > 1 ? 's' : ''}:\n`;
+        for (const [key, value] of Object.entries(changes)) {
+          const change = value as { from: unknown; to: unknown };
+          message += `\n• ${key}: ${JSON.stringify(change.from)} → ${JSON.stringify(change.to)}`;
+        }
+      } else {
+        message += '\nNo changes were needed - your trader is well configured!';
+      }
+
+      alert(message);
+
+      // Refresh traders
+      await fetchTraders();
+    } catch (error) {
+      console.error('Error optimizing trader:', error);
+      alert('Optimization failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setOptimizingTraderIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(traderId);
+        return newSet;
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: '#1E1E1E' }}>
@@ -510,6 +561,8 @@ export default function TradersAdminPage() {
                   onViewPositions={() => handleViewPositions(trader.id)}
                   isSelected={selectedTraderIds.has(trader.id)}
                   onToggleSelect={() => toggleTraderSelection(trader.id)}
+                  onOptimize={() => handleOptimizeTrader(trader.id)}
+                  isOptimizing={optimizingTraderIds.has(trader.id)}
                 />
               ))}
             </div>

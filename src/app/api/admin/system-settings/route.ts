@@ -15,6 +15,7 @@ const SYSTEM_SETTING_KEYS = {
   MAX_INTERVALS_PER_TRADER: 'max_intervals_per_trader',
   MAX_OPTIONAL_READERS_PER_TRADER: 'max_optional_readers_per_trader',
   SYSTEM_ENABLED: 'system_enabled',
+  OPTIMIZATION_CYCLE_HEARTBEAT_COUNT: 'optimization_cycle_heartbeat_count',
 } as const;
 
 // Default values for system settings
@@ -39,6 +40,11 @@ const DEFAULT_SETTINGS = {
     description:
       'Enable/disable system features (timeline visualization and position price auto-update)',
   },
+  [SYSTEM_SETTING_KEYS.OPTIMIZATION_CYCLE_HEARTBEAT_COUNT]: {
+    value: '10',
+    description:
+      'Number of heartbeats between automatic trader optimizations. Default: 10. Set to 0 to disable.',
+  },
 };
 
 /**
@@ -49,6 +55,7 @@ export async function GET() {
   try {
     // Fetch all system configurations from database
     const configs = await db.select().from(systemConfigurations);
+    console.log('[GET] System configurations from DB:', configs);
 
     // Convert to key-value map
     const settingsMap = new Map(
@@ -66,6 +73,9 @@ export async function GET() {
         description: config?.description || defaultValue.description,
       };
     }
+
+    console.log('[GET] Response data:', response);
+    console.log('[GET] system_enabled value:', response.system_enabled.value);
 
     return NextResponse.json({
       success: true,
@@ -95,11 +105,13 @@ export async function POST(request: NextRequest) {
       maxIntervalsPerTrader,
       maxOptionalReadersPerTrader,
       systemEnabled,
+      optimizationCycleHeartbeatCount,
     } = body as {
       minKlineIntervalSeconds?: number | string;
       maxIntervalsPerTrader?: number | string;
       maxOptionalReadersPerTrader?: number | string;
       systemEnabled?: boolean;
+      optimizationCycleHeartbeatCount?: number | string;
     };
 
     // Helper function to update a setting
@@ -141,6 +153,7 @@ export async function POST(request: NextRequest) {
 
     // Helper function to update a boolean setting
     const updateBooleanSetting = async (key: string, value: boolean | undefined) => {
+      console.log('[updateBooleanSetting] key:', key, 'value:', value, 'type:', typeof value);
       if (value !== undefined) {
         const existing = await db
           .select()
@@ -148,22 +161,101 @@ export async function POST(request: NextRequest) {
           .where(eq(systemConfigurations.key, key));
 
         const valueStr = String(value);
+        console.log(
+          '[updateBooleanSetting] valueStr:',
+          valueStr,
+          'existing count:',
+          existing.length
+        );
         const description = DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS].description;
 
         if (existing.length > 0) {
+          console.log('[updateBooleanSetting] updating existing record');
           await db
             .update(systemConfigurations)
             .set({ value: valueStr, description, updatedAt: new Date() })
             .where(eq(systemConfigurations.key, key));
         } else {
+          console.log('[updateBooleanSetting] inserting new record');
           await db.insert(systemConfigurations).values({
             key,
             value: valueStr,
             description,
           });
         }
+        console.log('[updateBooleanSetting] database operation completed');
+      } else {
+        console.log('[updateBooleanSetting] value is undefined, skipping');
       }
       return { success: true };
+    };
+
+    // Helper function to sync timeline_config with system_enabled
+    const syncTimelineConfig = async (systemEnabled: boolean) => {
+      console.log(
+        '[syncTimelineConfig] Syncing timeline_config with system_enabled:',
+        systemEnabled
+      );
+      try {
+        const TIMELINE_CONFIG_KEY = 'timeline_config';
+
+        // Get current timeline config
+        const [currentConfig] = await db
+          .select()
+          .from(systemConfigurations)
+          .where(eq(systemConfigurations.key, TIMELINE_CONFIG_KEY))
+          .limit(1);
+
+        let timelineConfig;
+        if (currentConfig) {
+          timelineConfig = JSON.parse(currentConfig.value);
+        } else {
+          timelineConfig = { enabled: false, enabledAt: null };
+        }
+
+        // Update enabled status
+        const wasEnabled = timelineConfig.enabled;
+        timelineConfig.enabled = systemEnabled;
+
+        // Update enabledAt if transitioning from disabled to enabled
+        if (systemEnabled && !wasEnabled) {
+          timelineConfig.enabledAt = new Date().toISOString();
+        }
+
+        // Save to database
+        if (currentConfig) {
+          await db
+            .update(systemConfigurations)
+            .set({
+              value: JSON.stringify(timelineConfig),
+              updatedAt: new Date(),
+            })
+            .where(eq(systemConfigurations.key, TIMELINE_CONFIG_KEY));
+        } else {
+          await db.insert(systemConfigurations).values({
+            key: TIMELINE_CONFIG_KEY,
+            value: JSON.stringify(timelineConfig),
+            description: 'Timeline visualization and auto heartbeat scheduling configuration',
+          });
+        }
+
+        console.log('[syncTimelineConfig] Timeline config updated:', timelineConfig);
+
+        // Start or stop the scheduler
+        const { getTimelineScheduler } = await import('@/lib/timeline/scheduler');
+        const scheduler = await getTimelineScheduler();
+
+        if (systemEnabled && !scheduler.isActive()) {
+          console.log('[syncTimelineConfig] Starting timeline scheduler');
+          await scheduler.start();
+        } else if (!systemEnabled && scheduler.isActive()) {
+          console.log('[syncTimelineConfig] Stopping timeline scheduler');
+          await scheduler.stop();
+        }
+      } catch (error) {
+        console.error('[syncTimelineConfig] Error syncing timeline config:', error);
+        throw error;
+      }
     };
 
     // Update min kline interval
@@ -210,6 +302,23 @@ export async function POST(request: NextRequest) {
 
     if (!systemResult.success) {
       return NextResponse.json(systemResult, { status: 400 });
+    }
+
+    // Sync timeline_config when system_enabled changes
+    if (systemEnabled !== undefined) {
+      await syncTimelineConfig(systemEnabled);
+    }
+
+    // Update optimization cycle heartbeat count
+    const optimizationCycleResult = await updateSetting(
+      SYSTEM_SETTING_KEYS.OPTIMIZATION_CYCLE_HEARTBEAT_COUNT,
+      optimizationCycleHeartbeatCount,
+      (v) => !isNaN(v) && v >= 0 && v <= 100,
+      'optimizationCycleHeartbeatCount must be a valid number between 0 and 100 (0 = disabled)'
+    );
+
+    if (!optimizationCycleResult.success) {
+      return NextResponse.json(optimizationCycleResult, { status: 400 });
     }
 
     return NextResponse.json({

@@ -7,6 +7,7 @@ import { db } from '@/db';
 import { traders, traderKlineIntervals, klineIntervals, systemConfigurations } from '@/db/schema';
 import { eq, inArray, count } from 'drizzle-orm';
 import { executeHeartbeat } from '@/lib/heartbeat/executor';
+import { executeOptimization } from '@/lib/optimization/executor';
 import {
   calculateStaggerOffsets,
   calculateFirstHeartbeatTime,
@@ -120,6 +121,19 @@ export class TimelineScheduler {
   }
 
   /**
+   * Get optimization cycle count from system settings
+   */
+  private async getOptimizationCycleCount(): Promise<number> {
+    const [config] = await db
+      .select()
+      .from(systemConfigurations)
+      .where(eq(systemConfigurations.key, 'optimization_cycle_heartbeat_count'))
+      .limit(1);
+
+    return config ? Math.max(0, parseInt(config.value, 10)) : 10;
+  }
+
+  /**
    * Update configuration
    */
   async setConfig(config: Partial<TimelineConfig>): Promise<void> {
@@ -174,10 +188,24 @@ export class TimelineScheduler {
         heartbeatTime = new Date(heartbeatTime.getTime() + intervalMs);
       }
 
+      // Calculate the heartbeat count for the first heartbeat in the range
+      // We need to work backwards from the current heartbeatCount
+      const currentHeartbeatTime = schedule.nextHeartbeatAt.getTime();
+      const targetHeartbeatTime = heartbeatTime.getTime();
+      const beatsDiff = Math.round((currentHeartbeatTime - targetHeartbeatTime) / intervalMs);
+      const baseHeartbeatCount = schedule.heartbeatCount - beatsDiff;
+
       // Now generate all heartbeats within the range
+      let heartbeatIndex = 0;
       while (heartbeatTime <= rangeEnd) {
         const heartbeatId = `${traderId}-${heartbeatTime.getTime()}`;
         const existing = this.scheduleHistory.get(heartbeatId);
+
+        // Calculate heartbeat count for this node
+        const nodeHeartbeatCount = baseHeartbeatCount + heartbeatIndex;
+        const isOptimizationNode =
+          schedule.optimizationCycleCount > 0 &&
+          (nodeHeartbeatCount + 1) % schedule.optimizationCycleCount === 0;
 
         heartbeats.push({
           id: heartbeatId,
@@ -189,10 +217,15 @@ export class TimelineScheduler {
           intervalSeconds: schedule.intervalSeconds,
           traderColor: schedule.traderColor,
           executionStatus: existing?.executionStatus,
+          finalDecision: existing?.finalDecision,
+          nodeType: existing?.nodeType || (isOptimizationNode ? 'optimization' : 'heartbeat'),
+          optimizationId: existing?.optimizationId,
+          optimizationReasoning: existing?.optimizationReasoning,
         });
 
         // Move to next heartbeat
         heartbeatTime = new Date(heartbeatTime.getTime() + intervalMs);
+        heartbeatIndex++;
       }
 
       // Also include recently completed heartbeats from scheduleHistory that are within range
@@ -210,7 +243,7 @@ export class TimelineScheduler {
         const alreadyIncluded = heartbeats.some((hb) => hb.id === historyId);
         if (alreadyIncluded) continue;
 
-        // Add the completed heartbeat from history
+        // Add the completed heartbeat from history with all its fields
         heartbeats.push({
           id: historyHeartbeat.id,
           traderId: historyHeartbeat.traderId,
@@ -222,6 +255,9 @@ export class TimelineScheduler {
           traderColor: historyHeartbeat.traderColor,
           executionStatus: historyHeartbeat.executionStatus,
           finalDecision: historyHeartbeat.finalDecision,
+          nodeType: historyHeartbeat.nodeType,
+          optimizationId: historyHeartbeat.optimizationId,
+          optimizationReasoning: historyHeartbeat.optimizationReasoning,
         });
       }
     }
@@ -262,6 +298,10 @@ export class TimelineScheduler {
    */
   private async initializeSchedules(): Promise<void> {
     console.log('[TimelineScheduler] Initializing schedules...');
+
+    // Get optimization cycle count
+    const optimizationCycleCount = await this.getOptimizationCycleCount();
+    console.log(`[TimelineScheduler] Optimization cycle count: ${optimizationCycleCount}`);
 
     // Get all enabled traders with their minimum k-line intervals
     const enabledTraders = await db
@@ -339,6 +379,15 @@ export class TimelineScheduler {
       const offset = offsets.get(trader.id) || 0;
       const firstHeartbeat = calculateFirstHeartbeatTime(now, trader.minIntervalSeconds, offset);
 
+      // Initialize heartbeat count
+      // Use 0-based counting: start from 0, optimization happens when count reaches cycleCount
+      // This ensures the first node is always a heartbeat (not optimization)
+      const initialHeartbeatCount = 0;
+
+      // Check if the next node should be optimization
+      // First node is at count=0, so it's never optimization
+      const isNextOptimization = false;
+
       this.schedules.set(trader.id, {
         traderId: trader.id,
         traderName: trader.name,
@@ -346,10 +395,13 @@ export class TimelineScheduler {
         nextHeartbeatAt: firstHeartbeat,
         staggerOffset: offset,
         traderColor: getTraderColor(trader.id),
+        heartbeatCount: initialHeartbeatCount,
+        optimizationCycleCount,
+        isNextOptimization,
       });
 
       console.log(
-        `[TimelineScheduler] Scheduled ${trader.name} (${trader.id}): every ${trader.minIntervalSeconds}s, offset ${offset}s, first at ${firstHeartbeat.toISOString()}`
+        `[TimelineScheduler] Scheduled ${trader.name} (${trader.id}): every ${trader.minIntervalSeconds}s, offset ${offset}s, first at ${firstHeartbeat.toISOString()}, heartbeat count: ${initialHeartbeatCount}, next is optimization: ${isNextOptimization}`
       );
     }
 
@@ -413,6 +465,9 @@ export class TimelineScheduler {
 
     const heartbeatId = `${traderId}-${schedule.nextHeartbeatAt.getTime()}`;
 
+    // Determine if this is an optimization node
+    const isOptimization = schedule.optimizationCycleCount > 0 && schedule.isNextOptimization;
+
     // Create heartbeat record
     const heartbeat: TimelineHeartbeat = {
       id: heartbeatId,
@@ -422,13 +477,14 @@ export class TimelineScheduler {
       status: 'executing',
       intervalSeconds: schedule.intervalSeconds,
       traderColor: schedule.traderColor,
+      nodeType: isOptimization ? 'optimization' : 'heartbeat',
     };
 
     this.scheduleHistory.set(heartbeatId, heartbeat);
 
-    // Emit heartbeat.started event
+    // Emit started event
     this.emitEvent({
-      type: 'heartbeat.started',
+      type: isOptimization ? 'optimization.started' : 'heartbeat.started',
       data: { heartbeat },
       timestamp: new Date().toISOString(),
     });
@@ -441,41 +497,69 @@ export class TimelineScheduler {
         throw new Error('Trader not found');
       }
 
-      // Execute heartbeat
-      const result = await executeHeartbeat(trader);
-
-      // Map heartbeat history status to timeline status
-      // History statuses: pending, in_progress, completed, failed, skipped_outside_hours, skipped_no_intervals, skipped_no_readers
-      // Timeline statuses: pending, executing, completed, failed
-      let timelineStatus: 'completed' | 'failed' = 'completed';
-      if (result.status === 'completed') {
-        timelineStatus = 'completed';
-      } else if (result.status === 'failed') {
-        timelineStatus = 'failed';
-      } else if (result.status.startsWith('skipped_')) {
-        // Skipped heartbeats are considered "completed" in the timeline sense
-        // They ran successfully but decided not to take action
-        timelineStatus = 'completed';
+      if (isOptimization) {
+        // Execute optimization
         console.log(
-          `[TimelineScheduler] ${schedule.traderName} heartbeat skipped: ${result.status}`
+          `[TimelineScheduler] Executing optimization for ${schedule.traderName} (trader ${traderId})`
         );
+
+        const result = await executeOptimization({ traderId, force: true });
+
+        if (result.success) {
+          // Update heartbeat record as completed
+          heartbeat.status = 'completed';
+          heartbeat.optimizationId = result.optimizationId;
+          heartbeat.optimizationReasoning = result.data?.reasoning;
+        } else {
+          // Optimization failed
+          heartbeat.status = 'failed';
+          console.error(
+            `[TimelineScheduler] Optimization failed for ${schedule.traderName}: ${result.error}`
+          );
+        }
       } else {
-        timelineStatus = 'failed';
+        // Execute heartbeat
+        const result = await executeHeartbeat(trader);
+
+        // Map heartbeat history status to timeline status
+        // History statuses: pending, in_progress, completed, failed, skipped_outside_hours, skipped_no_intervals, skipped_no_readers
+        // Timeline statuses: pending, executing, completed, failed
+        let timelineStatus: 'completed' | 'failed' = 'completed';
+        if (result.status === 'completed') {
+          timelineStatus = 'completed';
+        } else if (result.status === 'failed') {
+          timelineStatus = 'failed';
+        } else if (result.status.startsWith('skipped_')) {
+          // Skipped heartbeats are considered "completed" in the timeline sense
+          // They ran successfully but decided not to take action
+          timelineStatus = 'completed';
+          console.log(
+            `[TimelineScheduler] ${schedule.traderName} heartbeat skipped: ${result.status}`
+          );
+        } else {
+          timelineStatus = 'failed';
+        }
+
+        heartbeat.status = timelineStatus;
+        heartbeat.executionStatus = result.status; // Store original status
+        heartbeat.finalDecision = result.finalDecision || undefined; // Store final decision JSON
       }
 
-      // Update heartbeat record
-      heartbeat.status = timelineStatus;
       heartbeat.executedAt = new Date().toISOString();
-      heartbeat.executionStatus = result.status; // Store original status
-      heartbeat.finalDecision = result.finalDecision; // Store final decision JSON
 
       // Update scheduleHistory with the completed heartbeat
       this.scheduleHistory.set(heartbeatId, heartbeat);
 
-      // Emit completion event BEFORE updating nextHeartbeatAt
-      // This ensures the frontend can still find the heartbeat by ID
+      // Emit completion event BEFORE updating schedule
       this.emitEvent({
-        type: heartbeat.status === 'completed' ? 'heartbeat.completed' : 'heartbeat.failed',
+        type:
+          heartbeat.status === 'completed'
+            ? isOptimization
+              ? 'optimization.completed'
+              : 'heartbeat.completed'
+            : isOptimization
+              ? 'optimization.failed'
+              : 'heartbeat.failed',
         data: { heartbeat },
         timestamp: new Date().toISOString(),
       });
@@ -486,12 +570,25 @@ export class TimelineScheduler {
         schedule.intervalSeconds
       );
 
+      // Update heartbeat count and calculate next optimization
+      if (schedule.optimizationCycleCount > 0) {
+        if (isOptimization) {
+          // After optimization, reset count to 0 to start a new cycle
+          schedule.heartbeatCount = 0;
+        } else {
+          // After heartbeat, increment count
+          schedule.heartbeatCount += 1;
+        }
+        // Next node is optimization if count reaches or exceeds cycleCount
+        schedule.isNextOptimization = schedule.heartbeatCount >= schedule.optimizationCycleCount;
+      }
+
       console.log(
-        `[TimelineScheduler] ${schedule.traderName} heartbeat ${timelineStatus} (history status: ${result.status}), next at ${schedule.nextHeartbeatAt.toISOString()}`
+        `[TimelineScheduler] ${schedule.traderName} ${isOptimization ? 'optimization' : 'heartbeat'} ${heartbeat.status}, next at ${schedule.nextHeartbeatAt.toISOString()}, heartbeat count: ${schedule.heartbeatCount}, next is optimization: ${schedule.isNextOptimization}`
       );
     } catch (error) {
       console.error(
-        `[TimelineScheduler] Error executing heartbeat for ${schedule.traderName}:`,
+        `[TimelineScheduler] Error executing ${isOptimization ? 'optimization' : 'heartbeat'} for ${schedule.traderName}:`,
         error
       );
 
@@ -504,7 +601,7 @@ export class TimelineScheduler {
 
       // Emit failure event BEFORE updating nextHeartbeatAt
       this.emitEvent({
-        type: 'heartbeat.failed',
+        type: isOptimization ? 'optimization.failed' : 'heartbeat.failed',
         data: { heartbeat },
         timestamp: new Date().toISOString(),
       });
@@ -514,6 +611,19 @@ export class TimelineScheduler {
         schedule.nextHeartbeatAt,
         schedule.intervalSeconds
       );
+
+      // Update heartbeat count and calculate next optimization even on failure
+      if (schedule.optimizationCycleCount > 0) {
+        if (isOptimization) {
+          // After optimization, reset count to 0 to start a new cycle
+          schedule.heartbeatCount = 0;
+        } else {
+          // After heartbeat, increment count
+          schedule.heartbeatCount += 1;
+        }
+        // Next node is optimization if count reaches or exceeds cycleCount
+        schedule.isNextOptimization = schedule.heartbeatCount >= schedule.optimizationCycleCount;
+      }
     } finally {
       // Mark as no longer executing
       this.activeExecutions.delete(traderId);

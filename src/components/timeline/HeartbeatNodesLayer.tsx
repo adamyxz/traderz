@@ -144,6 +144,21 @@ function Tooltip({ heartbeat, position, visible }: TooltipProps) {
         </div>
       )}
 
+      {/* Optimization Reasoning (for optimization nodes) */}
+      {heartbeat.nodeType === 'optimization' && heartbeat.optimizationReasoning && (
+        <div className="mt-2 pt-2 border-t border-pink-700">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-pink-400 font-medium">Optimization:</span>
+          </div>
+          <div className="text-xs text-gray-400 line-clamp-3 max-w-[250px]">
+            {heartbeat.optimizationReasoning}
+          </div>
+          {heartbeat.optimizationId && (
+            <div className="text-xs text-gray-500 mt-1">ID: {heartbeat.optimizationId}</div>
+          )}
+        </div>
+      )}
+
       {/* Interval */}
       <div className="text-xs text-gray-500 mt-1">Interval: {heartbeat.intervalSeconds}s</div>
 
@@ -296,6 +311,7 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
         const isHistorical = x < 50; // Left of center line
         const decision = parseDecision(heartbeat.finalDecision);
         const isClickable = heartbeat.status === 'completed' || heartbeat.status === 'failed';
+        const isOptimization = heartbeat.nodeType === 'optimization';
 
         return (
           <div
@@ -315,36 +331,59 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
             onMouseLeave={handleMouseLeave}
             onClick={() => handleClick(heartbeat)}
           >
-            {/* Node circle */}
-            <div
-              className={`
-                rounded-full border-2 transition-all
-                ${heartbeat.status === 'executing' ? 'animate-ping' : ''}
-                ${isClickable ? 'group-hover:scale-125' : 'group-hover:scale-110'}
-              `}
-              style={{
-                width: heartbeat.status === 'executing' ? '16px' : '12px',
-                height: heartbeat.status === 'executing' ? '16px' : '12px',
-                backgroundColor: getNodeFill(heartbeat.status, isHistorical, decision?.action),
-                borderColor: getNodeBorderColor(heartbeat.status),
-                opacity: getNodeOpacity(heartbeat.status),
-                animationDuration: heartbeat.status === 'executing' ? '1s' : undefined,
-                animationIterationCount: heartbeat.status === 'executing' ? 'infinite' : undefined,
-              }}
-            >
-              {/* Status indicator */}
-              {heartbeat.status === 'failed' && (
-                <span className="flex items-center justify-center text-red-500 font-bold text-xs leading-none">
-                  ✕
-                </span>
-              )}
+            {/* Node circle - different style for optimization nodes */}
+            {isOptimization ? (
+              // Optimization node: diamond shape with pink color
+              <div
+                className={`
+                  flex items-center justify-center transition-all
+                  ${heartbeat.status === 'executing' ? 'animate-ping' : ''}
+                  ${isClickable ? 'group-hover:scale-125' : 'group-hover:scale-110'}
+                `}
+                style={{
+                  width: heartbeat.status === 'executing' ? '18px' : '14px',
+                  height: heartbeat.status === 'executing' ? '18px' : '14px',
+                  backgroundColor: heartbeat.status === 'executing' ? '#EC4899' : '#EC4899',
+                  transform: 'rotate(45deg)',
+                  opacity: getNodeOpacity(heartbeat.status),
+                  animationDuration: heartbeat.status === 'executing' ? '1s' : undefined,
+                  animationIterationCount:
+                    heartbeat.status === 'executing' ? 'infinite' : undefined,
+                }}
+              />
+            ) : (
+              // Regular heartbeat node: circle
+              <div
+                className={`
+                  rounded-full border-2 transition-all
+                  ${heartbeat.status === 'executing' ? 'animate-ping' : ''}
+                  ${isClickable ? 'group-hover:scale-125' : 'group-hover:scale-110'}
+                `}
+                style={{
+                  width: heartbeat.status === 'executing' ? '16px' : '12px',
+                  height: heartbeat.status === 'executing' ? '16px' : '12px',
+                  backgroundColor: getNodeFill(heartbeat.status, isHistorical, decision?.action),
+                  borderColor: getNodeBorderColor(heartbeat.status),
+                  opacity: getNodeOpacity(heartbeat.status),
+                  animationDuration: heartbeat.status === 'executing' ? '1s' : undefined,
+                  animationIterationCount:
+                    heartbeat.status === 'executing' ? 'infinite' : undefined,
+                }}
+              >
+                {/* Status indicator */}
+                {heartbeat.status === 'failed' && (
+                  <span className="flex items-center justify-center text-red-500 font-bold text-xs leading-none">
+                    ✕
+                  </span>
+                )}
 
-              {heartbeat.status === 'completed' && !decision && (
-                <span className="flex items-center justify-center text-blue-500 font-bold text-xs leading-none">
-                  ✓
-                </span>
-              )}
-            </div>
+                {heartbeat.status === 'completed' && !decision && (
+                  <span className="flex items-center justify-center text-blue-500 font-bold text-xs leading-none">
+                    ✓
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -416,6 +455,24 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
             style={{ boxShadow: '0 0 8px #EAB308' }}
           />
           <span>Close</span>
+        </div>
+        <div
+          style={{
+            width: '1px',
+            height: '16px',
+            background: 'rgba(255, 255, 255, 0.15)',
+            margin: '0 4px',
+          }}
+        />
+        <div className="flex items-center gap-1">
+          <div
+            className="w-2.5 h-2.5 bg-pink-500"
+            style={{
+              transform: 'rotate(45deg)',
+              boxShadow: '0 0 8px #EC4899',
+            }}
+          />
+          <span>Optimization</span>
         </div>
       </div>
 

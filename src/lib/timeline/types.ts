@@ -14,6 +14,11 @@ export interface TimelineConfig {
 }
 
 /**
+ * Timeline node type - distinguishes between heartbeat and optimization nodes
+ */
+export type TimelineNodeType = 'heartbeat' | 'optimization';
+
+/**
  * Heartbeat schedule for a single trader
  */
 export interface HeartbeatSchedule {
@@ -23,6 +28,9 @@ export interface HeartbeatSchedule {
   nextHeartbeatAt: Date; // UTC timestamp
   staggerOffset: number; // Offset in seconds from base interval
   traderColor: string; // Hex color for visualization
+  heartbeatCount: number; // Current heartbeat count for optimization cycle
+  optimizationCycleCount: number; // Number of heartbeats between optimizations (0 = disabled)
+  isNextOptimization: boolean; // Whether the next scheduled node is an optimization
 }
 
 /**
@@ -39,6 +47,9 @@ export interface TimelineHeartbeat {
   traderColor: string;
   executionStatus?: string; // Original execution status from heartbeat history (e.g., 'skipped_outside_hours')
   finalDecision?: string; // JSON string of ComprehensiveDecision (includes action, confidence, reasoning)
+  nodeType: TimelineNodeType; // Type of node: heartbeat or optimization
+  optimizationId?: number; // Optimization record ID (if nodeType is 'optimization')
+  optimizationReasoning?: string; // Optimization reasoning (if nodeType is 'optimization')
 }
 
 /**
@@ -58,6 +69,10 @@ export type TimelineEventType =
   | 'heartbeat.started'
   | 'heartbeat.completed'
   | 'heartbeat.failed'
+  | 'optimization.scheduled'
+  | 'optimization.started'
+  | 'optimization.completed'
+  | 'optimization.failed'
   | 'timeline.enabled'
   | 'timeline.disabled';
 

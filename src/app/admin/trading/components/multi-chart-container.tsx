@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import ChartCard from './chart-card';
 import AddChartModal from './add-chart-modal';
 import { usePositionEvents } from '@/hooks/use-position-events';
@@ -26,6 +26,14 @@ export default function MultiChartContainer({
   const [fullscreenChartId, setFullscreenChartId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  // Derive visible charts based on autoUpdateEnabled
+  const visibleCharts = useMemo(() => {
+    if (autoUpdateEnabled) {
+      return charts;
+    }
+    return charts.filter((c) => !c.id.startsWith('auto-'));
+  }, [charts, autoUpdateEnabled]);
+
   // Fetch auto-charts from API
   const fetchAutoCharts = useCallback(async () => {
     try {
@@ -42,6 +50,10 @@ export default function MultiChartContainer({
       }
 
       const autoCharts = result.data || [];
+      console.log(
+        '[MultiChartContainer] Received auto-charts:',
+        JSON.stringify(autoCharts, null, 2)
+      );
 
       // Create chart configs from auto-charts
       const newChartConfigs: ChartConfig[] = autoCharts.map(
@@ -56,7 +68,7 @@ export default function MultiChartContainer({
             stopLossPrice: number | null;
             takeProfitPrice: number | null;
             positionSize: number;
-            returnRate: number;
+            unrealizedPnl: number;
             side: 'long' | 'short';
           }>;
         }) => ({
@@ -67,6 +79,25 @@ export default function MultiChartContainer({
           connectionStatus: 'disconnected' as const,
           positions: item.positions,
         })
+      );
+
+      // 按交易对中最高未实现盈亏排序，确保显示盈亏最高的图表
+      newChartConfigs.sort((a, b) => {
+        const aMaxPnl = Math.max(...a.positions.map((p) => p.unrealizedPnl));
+        const bMaxPnl = Math.max(...b.positions.map((p) => p.unrealizedPnl));
+        console.log(
+          `[MultiChartContainer] Sorting: ${a.symbol} maxPnl=${aMaxPnl.toFixed(2)}, ${b.symbol} maxPnl=${bMaxPnl.toFixed(2)}`
+        );
+        return bMaxPnl - aMaxPnl; // 降序排序
+      });
+
+      console.log(
+        '[MultiChartContainer] Sorted charts:',
+        newChartConfigs.map((c) => ({
+          symbol: c.symbol,
+          maxPnl: Math.max(...c.positions.map((p) => p.unrealizedPnl)),
+          positionsCount: c.positions.length,
+        }))
       );
 
       // Merge with existing charts, deduplicating by symbol+interval
@@ -88,7 +119,21 @@ export default function MultiChartContainer({
           console.log(
             `[MultiChartContainer] Limiting auto-charts from ${chartsToAdd.length} to ${maxAutoCharts}`
           );
+          console.log(
+            '[MultiChartContainer] Charts to add BEFORE filtering:',
+            chartsToAdd.map((c) => ({
+              symbol: c.symbol,
+              maxPnl: Math.max(...c.positions.map((p) => p.unrealizedPnl)),
+            }))
+          );
           chartsToAdd = chartsToAdd.slice(0, maxAutoCharts);
+          console.log(
+            '[MultiChartContainer] Charts to add AFTER filtering:',
+            chartsToAdd.map((c) => ({
+              symbol: c.symbol,
+              maxPnl: Math.max(...c.positions.map((p) => p.unrealizedPnl)),
+            }))
+          );
         }
 
         return [...manualCharts, ...chartsToAdd];
@@ -117,29 +162,32 @@ export default function MultiChartContainer({
 
   // Fetch auto-charts when auto-update is enabled
   useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const fetchAndSetCharts = async () => {
+      await fetchAutoCharts().catch((error) => {
+        console.error('[MultiChartContainer] Error in fetchAutoCharts:', error);
+      });
+    };
+
     if (!autoUpdateEnabled) {
-      // When disabled, defer removal of auto-generated charts
-      const timeoutId = setTimeout(() => {
-        setCharts((prev) => prev.filter((c) => !c.id.startsWith('auto-')));
-      }, 0);
-      return () => clearTimeout(timeoutId);
+      return;
     }
 
     // When enabled, fetch auto-charts (synchronizes with external API)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchAutoCharts().catch((error) => {
-      console.error('[MultiChartContainer] Error in fetchAutoCharts:', error);
-    });
+    fetchAndSetCharts();
 
     // Set up periodic refresh to update rankings (every 30 seconds)
-    const intervalId = setInterval(() => {
+    intervalId = setInterval(() => {
       console.log('[MultiChartContainer] Periodic refresh: fetching auto-charts');
-      fetchAutoCharts().catch((error) => {
-        console.error('[MultiChartContainer] Error in periodic fetchAutoCharts:', error);
-      });
+      fetchAndSetCharts();
     }, 30000); // 30 seconds
 
-    return () => clearInterval(intervalId);
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [autoUpdateEnabled, fetchAutoCharts]);
 
   const getGridCols = () => {
@@ -185,7 +233,7 @@ export default function MultiChartContainer({
 
   // If a chart is in fullscreen mode, only show that chart
   if (fullscreenChartId) {
-    const fullscreenChart = charts.find((c) => c.id === fullscreenChartId);
+    const fullscreenChart = visibleCharts.find((c) => c.id === fullscreenChartId);
     if (!fullscreenChart) {
       setFullscreenChartId(null);
     } else {
@@ -209,7 +257,7 @@ export default function MultiChartContainer({
     <div>
       {/* Charts Grid */}
       <div className={`grid gap-4 ${getGridCols()}`}>
-        {charts.map((chart) => (
+        {visibleCharts.map((chart) => (
           <ChartCard
             key={chart.id}
             config={chart}

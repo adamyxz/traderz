@@ -16,6 +16,9 @@ export function buildMicroDecisionSystemPrompt(trader: Trader): string {
 - Holding Period: ${trader.holdingPeriod}
 - Position Stop Loss: ${trader.positionStopLoss}%
 - Position Take Profit: ${trader.positionTakeProfit}%
+- Leverage Range: ${trader.minLeverage}x to ${trader.maxLeverage}x
+- Min Trade Amount: $${trader.minTradeAmount}
+- Max Position Size: $${trader.maxPositionSize}
 
 **Decision Guidelines:**
 - Confidence 0.7+ = STRONG SIGNAL - TAKE ACTION (open/close position)
@@ -104,6 +107,8 @@ export function buildComprehensiveDecisionSystemPrompt(trader: Trader): string {
 - Aggressiveness: ${trader.aggressivenessLevel}/10
 - Max Positions: ${trader.maxPositions}
 - Max Position Size: $${trader.maxPositionSize}
+- Leverage Range: ${trader.minLeverage}x to ${trader.maxLeverage}x (IMPORTANT: Always stay within this range)
+- Min Trade Amount: $${trader.minTradeAmount}
 
 **Decision Guidelines:**
 - Confidence 0.7+ = STRONG CONSENSUS - TAKE ACTION with appropriate position size

@@ -71,38 +71,25 @@ export function usePositionEvents({
     return () => {
       eventSource.close();
       eventSourceRef.current = null;
-      setConnected(false);
     };
   }, [enabled, onPositionChange]);
-
-  const disconnect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-      setConnected(false);
-    }
-  }, []);
 
   // Connect/disconnect based on enabled state
   useEffect(() => {
     if (!enabled) {
-      // When disabled, use setTimeout to defer disconnect
-      const timeoutId = setTimeout(() => {
-        disconnect();
-      }, 0);
+      // When disabled, disconnect immediately
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      // Schedule state update to avoid synchronous setState in effect
+      const timeoutId = setTimeout(() => setConnected(false), 0);
       return () => clearTimeout(timeoutId);
     }
 
     const cleanup = connect();
     return cleanup;
-  }, [enabled, connect, disconnect]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
+  }, [enabled, connect]);
 
   return {
     connected,

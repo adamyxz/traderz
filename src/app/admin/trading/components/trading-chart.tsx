@@ -124,6 +124,7 @@ export default function TradingChart({
   const reconnectAttemptsRef = useRef(0); // Track reconnection attempts
   const onConnectionFailedRef = useRef(onConnectionFailed);
   onConnectionFailedRef.current = onConnectionFailed;
+  const isMountedRef = useRef(true); // Track if component is mounted
 
   // Real-time market data
   const [marketData, setMarketData] = useState<MarketData>({
@@ -321,6 +322,9 @@ export default function TradingChart({
 
   // WebSocket connection for real-time updates
   useEffect(() => {
+    // Mark component as mounted
+    isMountedRef.current = true;
+
     if (!isRunning || !candlestickSeriesRef.current || !volumeSeriesRef.current) {
       if (wsRef.current) {
         wsRef.current.close();
@@ -359,7 +363,7 @@ export default function TradingChart({
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (currentGeneration === wsGenerationRef.current) {
+        if (currentGeneration === wsGenerationRef.current && isMountedRef.current) {
           console.log(`[TradingChart] WebSocket connected (attempt ${attemptNumber + 1})`);
           onStatusChangeRef.current('connected');
           setWsError(null);
@@ -368,7 +372,7 @@ export default function TradingChart({
       };
 
       ws.onmessage = (event) => {
-        if (currentGeneration === wsGenerationRef.current) {
+        if (currentGeneration === wsGenerationRef.current && isMountedRef.current) {
           try {
             const message = JSON.parse(event.data);
             const kline = message.k;
@@ -414,7 +418,7 @@ export default function TradingChart({
       };
 
       ws.onerror = (error) => {
-        if (currentGeneration === wsGenerationRef.current) {
+        if (currentGeneration === wsGenerationRef.current && isMountedRef.current) {
           console.error(`[TradingChart] WebSocket error (attempt ${attemptNumber + 1}):`, error);
           setWsError('WebSocket connection failed. Please check your network or proxy settings.');
           onStatusChangeRef.current('disconnected');
@@ -428,25 +432,31 @@ export default function TradingChart({
             event.code,
             event.reason
           );
-          onStatusChangeRef.current('disconnected');
 
-          // Auto-reconnect logic
-          if (isRunning && !event.wasClean) {
-            const nextAttempt = attemptNumber + 1;
+          // Only update status and attempt reconnect if component is still mounted
+          if (isMountedRef.current) {
+            onStatusChangeRef.current('disconnected');
 
-            if (nextAttempt < 3) {
-              // Retry after 3 seconds
-              console.log(
-                `[TradingChart] Reconnecting in 3 seconds... (attempt ${nextAttempt + 1}/3)`
-              );
-              connectionAttemptRef.current = window.setTimeout(() => {
-                connectWebSocket(nextAttempt);
-              }, 3000);
-            } else {
-              // 3 attempts failed, notify parent to close the chart
-              console.error('[TradingChart] Connection failed after 3 attempts, closing chart');
-              setWsError('Connection failed. Chart closed automatically.');
-              onConnectionFailedRef.current?.();
+            // Auto-reconnect logic - only if component is still mounted
+            if (isRunning && !event.wasClean) {
+              const nextAttempt = attemptNumber + 1;
+
+              if (nextAttempt < 3) {
+                // Retry after 3 seconds
+                console.log(
+                  `[TradingChart] Reconnecting in 3 seconds... (attempt ${nextAttempt + 1}/3)`
+                );
+                connectionAttemptRef.current = window.setTimeout(() => {
+                  if (isMountedRef.current) {
+                    connectWebSocket(nextAttempt);
+                  }
+                }, 3000);
+              } else {
+                // 3 attempts failed, notify parent to close the chart
+                console.error('[TradingChart] Connection failed after 3 attempts, closing chart');
+                setWsError('Connection failed. Chart closed automatically.');
+                onConnectionFailedRef.current?.();
+              }
             }
           }
         }
@@ -476,6 +486,9 @@ export default function TradingChart({
     const cleanup = connectWebSocket(0);
 
     return () => {
+      // Mark component as unmounted BEFORE cleanup
+      isMountedRef.current = false;
+
       if (connectionAttemptRef.current) {
         clearTimeout(connectionAttemptRef.current);
         connectionAttemptRef.current = null;
@@ -493,7 +506,7 @@ export default function TradingChart({
     const newLinesMap = new Map();
 
     // Remove old lines
-    for (const [_positionId, lines] of positionLinesRef.current) {
+    for (const lines of positionLinesRef.current.values()) {
       series.removePriceLine(lines.entryLine);
       if (lines.stopLossLine) series.removePriceLine(lines.stopLossLine);
       if (lines.takeProfitLine) series.removePriceLine(lines.takeProfitLine);
@@ -575,7 +588,7 @@ export default function TradingChart({
   useEffect(() => {
     if (!currentPrice || !chartRef.current) return;
 
-    for (const [_positionId, lines] of positionLinesRef.current) {
+    for (const lines of positionLinesRef.current.values()) {
       const pnl =
         lines.side === 'long'
           ? (currentPrice - lines.entryPrice) / lines.entryPrice

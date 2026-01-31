@@ -72,6 +72,7 @@ export const traders = pgTable('traders', {
 
   // 偏好设置
   preferredTradingPairId: integer('preferred_trading_pair_id').references(() => tradingPairs.id), // 偏好交易对（多对一）
+  lastOptimizedAt: timestamp('last_optimized_at'), // Track last optimization time
 });
 
 export type Trader = typeof traders.$inferSelect;
@@ -245,6 +246,14 @@ export const heartbeatStatusEnum = pgEnum('heartbeat_status', [
   'skipped_no_readers',
 ]);
 
+// Optimization状态枚举
+export const optimizationStatusEnum = pgEnum('optimization_status', [
+  'pending',
+  'in_progress',
+  'completed',
+  'failed',
+]);
+
 // 仓位表
 export const positions = pgTable(
   'positions',
@@ -402,3 +411,52 @@ export const heartbeatHistory = pgTable(
 
 export type HeartbeatHistory = typeof heartbeatHistory.$inferSelect;
 export type NewHeartbeatHistory = typeof heartbeatHistory.$inferInsert;
+
+// ==================== 交易员优化记录 ====================
+
+// 交易员优化记录表
+export const traderOptimizations = pgTable(
+  'trader_optimizations',
+  {
+    id: serial('id').primaryKey(),
+    traderId: integer('trader_id')
+      .notNull()
+      .references(() => traders.id, { onDelete: 'cascade' }),
+
+    // Time tracking
+    startedAt: timestamp('started_at').defaultNow().notNull(),
+    completedAt: timestamp('completed_at'),
+    duration: integer('duration'), // milliseconds
+
+    // Data scope
+    positionCount: integer('position_count').notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+
+    // LLM interaction
+    llmRequest: text('llm_request').notNull(),
+    llmResponse: text('llm_response').notNull(),
+    llmReasoning: text('llm_reasoning'),
+
+    // Results
+    previousConfig: text('previous_config').notNull(), // JSONB
+    suggestedConfig: text('suggested_config').notNull(), // JSONB
+    appliedChanges: text('applied_changes').notNull(), // JSONB
+
+    // Status
+    status: optimizationStatusEnum('status').notNull(),
+    errorMessage: text('error_message'),
+
+    // Metadata
+    metadata: text('metadata'), // JSONB
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    traderIdx: index('trader_optimizations_trader_idx').on(table.traderId),
+    statusIdx: index('trader_optimizations_status_idx').on(table.status),
+    startedAtIdx: index('trader_optimizations_started_at_idx').on(table.startedAt),
+  })
+);
+
+export type TraderOptimization = typeof traderOptimizations.$inferSelect;
+export type NewTraderOptimization = typeof traderOptimizations.$inferInsert;

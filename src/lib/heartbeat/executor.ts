@@ -449,7 +449,25 @@ async function executeDecision(args: {
         }
 
         const side = dec.action === 'open_long' ? 'long' : 'short';
-        const leverage = dec.leverage || parseFloat(trader.maxLeverage) * 0.5;
+
+        // Calculate leverage with validation against trader limits
+        const minLev = parseFloat(trader.minLeverage);
+        const maxLev = parseFloat(trader.maxLeverage);
+        let leverage = dec.leverage || maxLev * 0.5;
+
+        // Clamp leverage to within trader's limits
+        if (leverage < minLev) {
+          console.warn(
+            `[Executor] Suggested leverage ${leverage} is below min ${minLev}, clamping to min`
+          );
+          leverage = minLev;
+        } else if (leverage > maxLev) {
+          console.warn(
+            `[Executor] Suggested leverage ${leverage} is above max ${maxLev}, clamping to max`
+          );
+          leverage = maxLev;
+        }
+
         const positionSize = dec.positionSize || parseFloat(trader.minTradeAmount);
 
         const response = await fetch(`${baseUrl}/api/positions`, {

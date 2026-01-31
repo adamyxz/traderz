@@ -3,26 +3,7 @@
 import { useState, useEffect } from 'react';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
-import { Settings, Save, Clock, Layers, Database, Power } from 'lucide-react';
-
-interface SystemSettings {
-  min_kline_interval_seconds: {
-    value: string;
-    description: string | null;
-  };
-  max_intervals_per_trader: {
-    value: string;
-    description: string | null;
-  };
-  max_optional_readers_per_trader: {
-    value: string;
-    description: string | null;
-  };
-  system_enabled: {
-    value: string;
-    description: string | null;
-  };
-}
+import { Settings, Save, Clock, Layers, Database, Power, Brain } from 'lucide-react';
 
 // Common interval presets
 const INTERVAL_PRESETS = [
@@ -34,13 +15,14 @@ const INTERVAL_PRESETS = [
 ];
 
 export default function SystemSettingsPage() {
-  const [_settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [minIntervalSeconds, setMinIntervalSeconds] = useState<number>(900);
   const [maxIntervalsPerTrader, setMaxIntervalsPerTrader] = useState<number>(4);
   const [maxOptionalReadersPerTrader, setMaxOptionalReadersPerTrader] = useState<number>(5);
   const [systemEnabled, setSystemEnabled] = useState<boolean>(false);
+  const [optimizationCycleHeartbeatCount, setOptimizationCycleHeartbeatCount] =
+    useState<number>(10);
   const [saveMessage, setSaveMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -57,11 +39,22 @@ export default function SystemSettingsPage() {
       const response = await fetch('/api/admin/system-settings');
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
-      setSettings(data.data);
+      console.log('[fetchSettings] Received data:', data);
+      console.log('[fetchSettings] system_enabled value:', data.data.system_enabled?.value);
       setMinIntervalSeconds(Number(data.data.min_kline_interval_seconds.value));
       setMaxIntervalsPerTrader(Number(data.data.max_intervals_per_trader.value));
       setMaxOptionalReadersPerTrader(Number(data.data.max_optional_readers_per_trader.value));
-      setSystemEnabled(data.data.system_enabled?.value === 'true');
+      setOptimizationCycleHeartbeatCount(
+        Number(data.data.optimization_cycle_heartbeat_count?.value || '10')
+      );
+      const enabled = data.data.system_enabled?.value === 'true';
+      console.log(
+        '[fetchSettings] Setting systemEnabled to:',
+        enabled,
+        'from value:',
+        data.data.system_enabled?.value
+      );
+      setSystemEnabled(enabled);
     } catch (error) {
       console.error('Error fetching settings:', error);
       showSaveMessage('error', 'Failed to load system settings');
@@ -75,6 +68,12 @@ export default function SystemSettingsPage() {
     setSaveMessage(null);
 
     try {
+      console.log(
+        '[handleSave] Sending systemEnabled:',
+        systemEnabled,
+        'type:',
+        typeof systemEnabled
+      );
       const response = await fetch('/api/admin/system-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,10 +82,12 @@ export default function SystemSettingsPage() {
           maxIntervalsPerTrader,
           maxOptionalReadersPerTrader,
           systemEnabled,
+          optimizationCycleHeartbeatCount,
         }),
       });
 
       const data = await response.json();
+      console.log('[handleSave] Response:', data);
 
       if (data.success) {
         showSaveMessage('success', 'System settings updated successfully');
@@ -263,6 +264,51 @@ export default function SystemSettingsPage() {
                   +
                 </button>
               </div>
+            </div>
+
+            {/* Optimization Cycle */}
+            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Brain className="h-4 w-4 text-pink-400" />
+                <h2 className="text-sm font-semibold text-white">Auto Optimization</h2>
+              </div>
+              <div className="mb-3 text-2xl font-bold text-white">
+                {optimizationCycleHeartbeatCount === 0
+                  ? 'OFF'
+                  : `${optimizationCycleHeartbeatCount} beats`}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    setOptimizationCycleHeartbeatCount(
+                      Math.max(0, optimizationCycleHeartbeatCount - 1)
+                    )
+                  }
+                  disabled={optimizationCycleHeartbeatCount <= 0}
+                  className="rounded-lg bg-gray-700/50 px-3 py-1 text-white transition-colors hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  -
+                </button>
+                <div className="flex-1 rounded-lg border border-gray-600 bg-gray-700/50 px-2 py-1 text-center text-sm font-medium text-white">
+                  {optimizationCycleHeartbeatCount === 0 ? 'OFF' : optimizationCycleHeartbeatCount}
+                </div>
+                <button
+                  onClick={() =>
+                    setOptimizationCycleHeartbeatCount(
+                      Math.min(100, optimizationCycleHeartbeatCount + 1)
+                    )
+                  }
+                  disabled={optimizationCycleHeartbeatCount >= 100}
+                  className="rounded-lg bg-gray-700/50 px-3 py-1 text-white transition-colors hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  +
+                </button>
+              </div>
+              {optimizationCycleHeartbeatCount > 0 && (
+                <p className="mt-2 text-xs text-gray-400">
+                  Traders optimize every {optimizationCycleHeartbeatCount} heartbeats
+                </p>
+              )}
             </div>
           </div>
 
