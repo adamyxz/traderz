@@ -1,6 +1,10 @@
 {
   "name": "taker-buy-sell-volume",
   "description": "获取主动买卖量数据，包含主动买入/卖出量比值、主动买入量、主动卖出量",
+  "standardParameters": {
+    "symbol": "symbol",
+    "interval": "period"
+  },
   "parameters": [
     {
       "name": "symbol",

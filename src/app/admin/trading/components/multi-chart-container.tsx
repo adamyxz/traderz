@@ -45,35 +45,51 @@ export default function MultiChartContainer({
 
       // Create chart configs from auto-charts
       const newChartConfigs: ChartConfig[] = autoCharts.map(
-        (item: { symbol: string; interval: string; traderId: number; traderName: string }) => ({
-          id: `auto-${item.traderId}-${item.symbol}-${item.interval}`,
+        (item: {
+          symbol: string;
+          interval: string;
+          positions: Array<{
+            positionId: number;
+            traderId: number;
+            traderName: string;
+            entryPrice: number;
+            stopLossPrice: number | null;
+            takeProfitPrice: number | null;
+            positionSize: number;
+            returnRate: number;
+            side: 'long' | 'short';
+          }>;
+        }) => ({
+          id: `auto-${item.symbol}-${item.interval}`,
           symbol: item.symbol,
           interval: item.interval,
           isRunning: true,
           connectionStatus: 'disconnected' as const,
+          positions: item.positions,
         })
       );
 
       // Merge with existing charts, deduplicating by symbol+interval
       setCharts((prevCharts) => {
-        const existingKeySet = new Set(
-          prevCharts
-            .filter((c) => !c.id.startsWith('auto-'))
-            .map((c) => `${c.symbol}:${c.interval}`)
-        );
+        // Keep only manual charts, remove ALL old auto-charts
+        const manualCharts = prevCharts.filter((c) => !c.id.startsWith('auto-'));
 
-        const chartsToAdd = newChartConfigs.filter(
+        // Get existing symbol:interval keys from manual charts
+        const existingKeySet = new Set(manualCharts.map((c) => `${c.symbol}:${c.interval}`));
+
+        // Add new auto-charts only if they don't conflict with manual charts
+        let chartsToAdd = newChartConfigs.filter(
           (c) => !existingKeySet.has(`${c.symbol}:${c.interval}`)
         );
 
-        // Remove old auto-charts that are not in the new list
-        const newAutoKeys = new Set(newChartConfigs.map((c) => `${c.symbol}:${c.interval}`));
-        const manualCharts = prevCharts.filter((c) => {
-          if (c.id.startsWith('auto-')) {
-            return newAutoKeys.has(`${c.symbol}:${c.interval}`);
-          }
-          return true;
-        });
+        // Limit auto-charts to maximum 4
+        const maxAutoCharts = 4;
+        if (chartsToAdd.length > maxAutoCharts) {
+          console.log(
+            `[MultiChartContainer] Limiting auto-charts from ${chartsToAdd.length} to ${maxAutoCharts}`
+          );
+          chartsToAdd = chartsToAdd.slice(0, maxAutoCharts);
+        }
 
         return [...manualCharts, ...chartsToAdd];
       });
@@ -114,6 +130,16 @@ export default function MultiChartContainer({
     fetchAutoCharts().catch((error) => {
       console.error('[MultiChartContainer] Error in fetchAutoCharts:', error);
     });
+
+    // Set up periodic refresh to update rankings (every 30 seconds)
+    const intervalId = setInterval(() => {
+      console.log('[MultiChartContainer] Periodic refresh: fetching auto-charts');
+      fetchAutoCharts().catch((error) => {
+        console.error('[MultiChartContainer] Error in periodic fetchAutoCharts:', error);
+      });
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(intervalId);
   }, [autoUpdateEnabled, fetchAutoCharts]);
 
   const getGridCols = () => {

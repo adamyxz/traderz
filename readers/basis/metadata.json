@@ -1,6 +1,10 @@
 {
   "name": "basis",
   "description": "获取基差数据，包含基差值、基差率、指数价格和合约价格。基差 = 合约价格 - 指数价格",
+  "standardParameters": {
+    "symbol": "symbol",
+    "interval": "period"
+  },
   "parameters": [
     {
       "name": "symbol",

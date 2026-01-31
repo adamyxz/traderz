@@ -7,7 +7,7 @@ import {
   klineIntervals,
   traderKlineIntervals,
 } from '@/db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 
 /**
  * GET /api/trading/auto-charts
@@ -15,14 +15,59 @@ import { eq, and, desc, sql } from 'drizzle-orm';
  * 获取自动推荐的图表配置
  *
  * 逻辑：
- * 1. 获取所有有持仓的trader（status='open'的positions）
- * 2. 按收益率排名（totalReturnRate），取前4名
- * 3. 对每个trader，找到其当前最大的持仓（按positionSize排序）
- * 4. 获取该持仓的交易对symbol和该trader关联的最小K线周期
+ * 1. 按交易对分组，找出有开仓的交易对
+ * 2. 对每个交易对，获取所有该交易对的开仓仓位及其trader信息
+ * 3. 找出该交易对下使用最短K线周期的trader，用他的周期作为图表周期
  */
 export async function GET() {
   try {
-    // 1. 获取所有已平仓的仓位来计算每个trader的收益率
+    // 获取所有开仓的持仓
+    const openPositions = await db
+      .select({
+        positionId: positions.id,
+        traderId: positions.traderId,
+        tradingPairId: positions.tradingPairId,
+        entryPrice: positions.entryPrice,
+        stopLossPrice: positions.stopLossPrice,
+        takeProfitPrice: positions.takeProfitPrice,
+        positionSize: positions.positionSize,
+        side: positions.side,
+      })
+      .from(positions)
+      .where(eq(positions.status, 'open'));
+
+    if (openPositions.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // 按交易对分组
+    const pairIdToPositions = new Map<number, typeof openPositions>();
+    for (const pos of openPositions) {
+      const current = pairIdToPositions.get(pos.tradingPairId) || [];
+      current.push(pos);
+      pairIdToPositions.set(pos.tradingPairId, current);
+    }
+
+    // 获取所有涉及到的trader、tradingPair、klineInterval
+    const traderIds = [...new Set(openPositions.map((p) => p.traderId))];
+    const tradingPairIds = [...new Set(openPositions.map((p) => p.tradingPairId))];
+
+    const [traderDetails, pairDetails, intervalRelations] = await Promise.all([
+      db.select().from(traders).where(inArray(traders.id, traderIds)),
+      db.select().from(tradingPairs).where(inArray(tradingPairs.id, tradingPairIds)),
+      db
+        .select()
+        .from(traderKlineIntervals)
+        .where(inArray(traderKlineIntervals.traderId, traderIds)),
+    ]);
+
+    const traderMap = new Map(traderDetails.map((t) => [t.id, t]));
+    const pairMap = new Map(pairDetails.map((p) => [p.id, p]));
+
+    // 计算每个trader的收益率
     const closedPositions = await db
       .select({
         traderId: positions.traderId,
@@ -32,7 +77,6 @@ export async function GET() {
       .from(positions)
       .where(eq(positions.status, 'closed'));
 
-    // 计算每个trader的收益率
     const traderPnlMap = new Map<number, { totalPnl: number; totalInvested: number }>();
     for (const pos of closedPositions) {
       const current = traderPnlMap.get(pos.traderId) || { totalPnl: 0, totalInvested: 0 };
@@ -44,97 +88,78 @@ export async function GET() {
       });
     }
 
-    // 2. 获取所有有持仓的trader
-    const tradersWithPositions = await db
-      .select({
-        traderId: positions.traderId,
-      })
-      .from(positions)
-      .where(eq(positions.status, 'open'))
-      .groupBy(positions.traderId);
-
-    if (tradersWithPositions.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: [],
-      });
+    const traderReturnRateMap = new Map<number, number>();
+    for (const [traderId, pnlData] of traderPnlMap) {
+      const returnRate =
+        pnlData.totalInvested > 0 ? (pnlData.totalPnl / pnlData.totalInvested) * 100 : 0;
+      traderReturnRateMap.set(traderId, returnRate);
     }
 
-    // 获取trader详细信息
-    const traderIds = tradersWithPositions.map((t) => t.traderId);
-    const traderDetails = await db
-      .select()
-      .from(traders)
-      .where(sql`${traders.id} = ANY(${traderIds})`);
-
-    // 计算收益率并排序
-    const tradersWithReturnRate = traderDetails.map((trader) => {
-      const pnlData = traderPnlMap.get(trader.id);
-      const totalPnl = pnlData?.totalPnl || 0;
-      const totalInvested = pnlData?.totalInvested || 0;
-      const totalReturnRate = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
-
-      return {
-        ...trader,
-        totalReturnRate,
-      };
-    });
-
-    // 按收益率降序排序，取前4
-    tradersWithReturnRate.sort((a, b) => b.totalReturnRate - a.totalReturnRate);
-    const topTraders = tradersWithReturnRate.slice(0, 4);
-
-    // 3. 为每个top trader获取其最大的持仓和对应的交易对、周期
-    const chartConfigs = [];
-
-    for (const trader of topTraders) {
-      // 获取该trader的所有持仓，按positionSize降序排序
-      const traderPositions = await db
-        .select()
-        .from(positions)
-        .where(and(eq(positions.traderId, trader.id), eq(positions.status, 'open')))
-        .orderBy(desc(positions.positionSize))
-        .limit(1);
-
-      if (traderPositions.length === 0) continue;
-
-      const largestPosition = traderPositions[0];
-
-      // 获取交易对信息
-      const [pair] = await db
-        .select()
-        .from(tradingPairs)
-        .where(eq(tradingPairs.id, largestPosition.tradingPairId))
-        .limit(1);
-
-      if (!pair) continue;
-
-      // 获取该trader关联的K线周期，找出最小的（按seconds排序）
-      const intervalRelations = await db
-        .select()
-        .from(traderKlineIntervals)
-        .where(eq(traderKlineIntervals.traderId, trader.id));
-
-      if (intervalRelations.length === 0) continue;
-
-      const intervalIds = intervalRelations.map((r) => r.klineIntervalId);
-      const traderIntervals = await db
+    // 为每个交易对找出最短的K线周期
+    const pairIdToMinInterval = new Map<number, { code: string; seconds: number }>();
+    for (const rel of intervalRelations) {
+      const interval = await db
         .select()
         .from(klineIntervals)
-        .where(sql`${klineIntervals.id} = ANY(${intervalIds})`)
-        .orderBy(klineIntervals.seconds); // 升序，最小的在前
+        .where(eq(klineIntervals.id, rel.klineIntervalId))
+        .limit(1);
 
-      if (traderIntervals.length === 0) continue;
+      if (interval.length === 0) continue;
 
-      const minInterval = traderIntervals[0];
+      const current = pairIdToMinInterval.get(rel.traderId);
+      if (!current || interval[0].seconds < current.seconds) {
+        pairIdToMinInterval.set(rel.traderId, {
+          code: interval[0].code,
+          seconds: interval[0].seconds,
+        });
+      }
+    }
+
+    // 构建图表配置
+    const chartConfigs = [];
+
+    for (const [tradingPairId, positionsOnPair] of pairIdToPositions) {
+      const pair = pairMap.get(tradingPairId);
+      if (!pair) continue;
+
+      // 找出该交易对下使用最短周期的trader
+      let minIntervalSeconds = Infinity;
+      let minIntervalCode = '1h';
+
+      for (const pos of positionsOnPair) {
+        const intervalData = pairIdToMinInterval.get(pos.traderId);
+        if (intervalData && intervalData.seconds < minIntervalSeconds) {
+          minIntervalSeconds = intervalData.seconds;
+          minIntervalCode = intervalData.code;
+        }
+      }
+
+      // 收集该交易对下所有仓位的信息
+      const positionInfos = positionsOnPair
+        .map((pos) => {
+          const trader = traderMap.get(pos.traderId);
+          if (!trader) return null;
+
+          return {
+            positionId: pos.positionId,
+            traderId: pos.traderId,
+            traderName: trader.name,
+            entryPrice: Number(pos.entryPrice),
+            stopLossPrice: pos.stopLossPrice ? Number(pos.stopLossPrice) : null,
+            takeProfitPrice: pos.takeProfitPrice ? Number(pos.takeProfitPrice) : null,
+            positionSize: Number(pos.positionSize),
+            returnRate: traderReturnRateMap.get(pos.traderId) || 0,
+            side: pos.side as 'long' | 'short',
+          };
+        })
+        .filter((p) => p !== null);
+
+      if (positionInfos.length === 0) continue;
 
       chartConfigs.push({
         symbol: pair.symbol,
-        interval: minInterval.code,
-        traderId: trader.id,
-        traderName: trader.name,
-        positionSize: Number(largestPosition.positionSize),
-        returnRate: trader.totalReturnRate,
+        interval: minIntervalCode,
+        positions: positionInfos,
       });
     }
 

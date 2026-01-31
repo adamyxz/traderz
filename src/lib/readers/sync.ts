@@ -63,6 +63,7 @@ export async function syncReadersFromDirectory(args: { readersDirectory: string;
               .set({
                 description: metadata.description,
                 scriptHash: hash,
+                mandatory: metadata.mandatory || false,
                 updatedAt: new Date(),
               })
               .where(eq(readers.id, reader.id));
@@ -112,6 +113,7 @@ export async function syncReadersFromDirectory(args: { readersDirectory: string;
               description: metadata.description,
               scriptPath: `readers/${readerDir.name}/index.ts`,
               scriptHash: hash,
+              mandatory: metadata.mandatory || false,
             })
             .returning();
 

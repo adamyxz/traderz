@@ -1,5 +1,5 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { toRelativeTimestamps, trimPrice } from '@/lib/toon';
+import { toRelativeTimestamps, trimPrice, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
@@ -10,7 +10,7 @@ const InputSchema = z.object({
   symbol: z.string().regex(/^[A-Z]{2,20}USDT$/, {
     message: '交易对格式错误，应为 BTCUSDT 格式',
   }),
-  period: periodEnum,
+  period: periodEnum.default('5m'),
   limit: z.number().int().min(1).max(500).default(100),
   endTime: z.number().int().min(0).default(0),
 });
@@ -82,22 +82,18 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       'T'
     );
 
-    // 构建CSV
-    const keys = optimizedData.length > 0 ? Object.keys(optimizedData[0]) : ['dT', 'oi', 'oiv'];
-    const csvHeader = keys.join(',');
-    const csvRows = optimizedData.map((row: Record<string, unknown>) => {
-      return keys.map((k) => row[k]).join(',');
+    // 构建超紧凑CSV - 移除时间戳列, 行序隐含时间顺序
+    const csvData = toCompactCSV(optimizedData, {
+      excludeColumns: ['dT'], // 移除相对时间戳
+      defaultValuePlaceholder: '', // 0值用空字符串表示
     });
-    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
 
     const result = {
       s: symbol,
       p: period,
       fmt: 'csv',
-      bT: baseTime, // base timestamp for relative times
+      bT: baseTime,
       d: csvData,
-      cnt: data.length,
-      fa: new Date().toISOString(),
     };
 
     return {

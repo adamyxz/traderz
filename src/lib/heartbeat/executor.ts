@@ -22,6 +22,9 @@ import { executeReader } from '@/lib/readers/executor';
 import type { ReaderContext } from '@/lib/readers/types';
 import type { Trader } from '@/db/schema';
 import type { Position } from '@/lib/trading/position-types';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+import { existsSync } from 'fs';
 
 /**
  * Check if current time is within trader's active hours
@@ -40,6 +43,31 @@ function isWithinActiveHours(trader: Trader): boolean {
     return currentTimeInMinutes >= startTimeInMinutes || currentTimeInMinutes < endTimeInMinutes;
   }
   return currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes < endTimeInMinutes;
+}
+
+/**
+ * Load reader metadata from file system
+ * Metadata is stored in readers/{readerName}/metadata.json
+ */
+async function loadReaderMetadata(
+  readerName: string
+): Promise<{ standardParameters?: Record<string, string> } | undefined> {
+  try {
+    const readersDir = '/Users/yxz/dev/traderz/readers';
+    const metadataPath = join(readersDir, readerName, 'metadata.json');
+
+    if (!existsSync(metadataPath)) {
+      console.warn(`[Heartbeat] Metadata file not found for reader: ${readerName}`);
+      return undefined;
+    }
+
+    const metadataContent = await readFile(metadataPath, 'utf-8');
+    const metadata = JSON.parse(metadataContent);
+    return metadata;
+  } catch (error) {
+    console.error(`[Heartbeat] Failed to load metadata for ${readerName}:`, error);
+    return undefined;
+  }
 }
 
 /**
@@ -105,13 +133,23 @@ export async function executeHeartbeat(trader: Trader) {
         )
       );
 
-    // 3. Get readers
+    // 3. Get readers - include both trader-associated readers AND mandatory readers
     const readerRelations = await db
       .select()
       .from(traderReaders)
       .where(eq(traderReaders.traderId, trader.id));
 
-    if (readerRelations.length === 0) {
+    // Get all mandatory readers (regardless of trader association)
+    const mandatoryReaders = await db.select().from(readers).where(eq(readers.mandatory, true));
+
+    // Get trader-associated reader IDs
+    const traderReaderIds = readerRelations.map((r) => r.readerId);
+    const mandatoryReaderIds = mandatoryReaders.map((r) => r.id);
+
+    // Combine trader readers with mandatory readers (avoiding duplicates)
+    const allReaderIds = Array.from(new Set([...traderReaderIds, ...mandatoryReaderIds]));
+
+    if (allReaderIds.length === 0) {
       const [updated] = await db
         .update(heartbeatHistory)
         .set({
@@ -127,12 +165,16 @@ export async function executeHeartbeat(trader: Trader) {
     const traderReadersList = await db
       .select()
       .from(readers)
-      .where(
-        inArray(
-          readers.id,
-          readerRelations.map((r) => r.readerId)
-        )
-      );
+      .where(inArray(readers.id, allReaderIds));
+
+    // Load metadata for all readers from file system
+    const readerMetadataMap = new Map<number, { standardParameters?: Record<string, string> }>();
+    for (const reader of traderReadersList) {
+      const metadata = await loadReaderMetadata(reader.name);
+      if (metadata) {
+        readerMetadataMap.set(reader.id, metadata);
+      }
+    }
 
     // Get all reader parameters with their default values
     const allReaderParams = await db
@@ -196,18 +238,35 @@ export async function executeHeartbeat(trader: Trader) {
 
           // Build input with default values applied
           const readerParams = paramsByReaderId[reader.id] || [];
-          const inputWithDefaults: Record<string, unknown> = {
-            symbol: tradingPairSymbol,
-            interval: interval.code,
-          };
+          const inputWithDefaults: Record<string, unknown> = {};
+
+          // Inject standard parameters based on metadata declaration
+          // Note: metadata is loaded from file system, stored in readerMetadataMap
+          const metadata = readerMetadataMap.get(reader.id);
+          const standardParams = metadata?.standardParameters || {};
+
+          // Map standard parameters to reader's expected parameter names
+          for (const [standardType, targetParam] of Object.entries(standardParams)) {
+            if (standardType === 'symbol') {
+              inputWithDefaults[targetParam] = tradingPairSymbol;
+            } else if (standardType === 'interval') {
+              inputWithDefaults[targetParam] = interval.code;
+            }
+          }
 
           // Apply default values for parameters that have them
+          // Only apply defaults if the parameter is not already set
           for (const paramDef of readerParams) {
+            const paramKey = paramDef.paramName;
+            // Skip if parameter already has a value (e.g., from standard parameters)
+            if (inputWithDefaults[paramKey] !== undefined) {
+              continue;
+            }
             if (paramDef.defaultValue !== null && paramDef.defaultValue !== undefined) {
               try {
-                inputWithDefaults[paramDef.paramName] = JSON.parse(paramDef.defaultValue);
+                inputWithDefaults[paramKey] = JSON.parse(paramDef.defaultValue);
               } catch {
-                inputWithDefaults[paramDef.paramName] = paramDef.defaultValue;
+                inputWithDefaults[paramKey] = paramDef.defaultValue;
               }
             }
           }
@@ -240,7 +299,7 @@ export async function executeHeartbeat(trader: Trader) {
       }
 
       // Get micro-decision from LLM
-      const llmClient = new DeepSeekChatClient({ temperature: 0.3, maxTokens: 1000 });
+      const llmClient = new DeepSeekChatClient({ temperature: 0.6, maxTokens: 1000 });
       const structuredRunner = llmClient.withStructuredOutput(MicroDecisionSchema);
       const systemPrompt = buildMicroDecisionSystemPrompt(trader);
       const userPrompt = buildMicroDecisionUserPrompt({
@@ -266,7 +325,7 @@ export async function executeHeartbeat(trader: Trader) {
     }
 
     // 7. Get comprehensive decision
-    const comprehensiveClient = new DeepSeekChatClient({ temperature: 0.4, maxTokens: 1500 });
+    const comprehensiveClient = new DeepSeekChatClient({ temperature: 0.5, maxTokens: 1500 });
     const comprehensiveRunner = comprehensiveClient.withStructuredOutput(
       ComprehensiveDecisionSchema
     );

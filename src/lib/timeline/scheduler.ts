@@ -541,10 +541,30 @@ let globalScheduler: TimelineScheduler | null = null;
 
 /**
  * Get or create the global scheduler instance
+ * Auto-starts if configuration says it should be running
  */
-export function getTimelineScheduler(): TimelineScheduler {
+export async function getTimelineScheduler(): Promise<TimelineScheduler> {
   if (!globalScheduler) {
+    console.log('[TimelineScheduler] Creating new scheduler instance');
     globalScheduler = new TimelineScheduler();
+
+    // Check if scheduler should be running (e.g., after hot reload)
+    const config = await globalScheduler.getConfig();
+    console.log('[TimelineScheduler] Config from DB:', { enabled: config.enabled });
+
+    if (config.enabled && !globalScheduler.isActive()) {
+      console.log('[TimelineScheduler] Auto-starting from config (hot reload recovery)');
+      await globalScheduler.start();
+    } else if (config.enabled && globalScheduler.isActive()) {
+      console.log('[TimelineScheduler] Already active, skipping start');
+    } else {
+      console.log('[TimelineScheduler] Config disabled, not starting');
+    }
+  } else {
+    console.log(
+      '[TimelineScheduler] Reusing existing scheduler instance, active:',
+      globalScheduler.isActive()
+    );
   }
   return globalScheduler;
 }

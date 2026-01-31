@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback } from 'react';
 import { Maximize2, X } from 'lucide-react';
 import TradingChart from './trading-chart';
 import type {
@@ -30,29 +31,43 @@ export default function ChartCard({
   onFullscreen,
   onExitFullscreen,
 }: ChartCardProps) {
-  const handleSymbolChange = (symbol: string) => {
-    onConfigChange(config.id, { symbol });
-  };
+  const handleSymbolChange = useCallback(
+    (symbol: string) => {
+      onConfigChange(config.id, { symbol });
+    },
+    [config.id, onConfigChange]
+  );
 
-  const handleIntervalChange = (interval: string) => {
-    onConfigChange(config.id, { interval });
-  };
+  const handleIntervalChange = useCallback(
+    (interval: string) => {
+      onConfigChange(config.id, { interval });
+    },
+    [config.id, onConfigChange]
+  );
 
-  const handleStatusChange = (newStatus: ConnectionStatus) => {
-    onConfigChange(config.id, { connectionStatus: newStatus });
-  };
+  const handleStatusChange = useCallback(
+    (newStatus: ConnectionStatus) => {
+      onConfigChange(config.id, { connectionStatus: newStatus });
+    },
+    [config.id, onConfigChange]
+  );
 
-  const handleDelete = () => {
+  const handleConnectionFailed = useCallback(() => {
+    // Auto-close chart when connection fails after 3 attempts
     onDelete(config.id);
-  };
+  }, [config.id, onDelete]);
 
-  const handleFullscreen = () => {
+  const handleDelete = useCallback(() => {
+    onDelete(config.id);
+  }, [config.id, onDelete]);
+
+  const handleFullscreen = useCallback(() => {
     if (isFullscreen) {
       onExitFullscreen();
     } else {
       onFullscreen(config.id);
     }
-  };
+  }, [isFullscreen, config.id, onFullscreen, onExitFullscreen]);
 
   return (
     <div
@@ -150,6 +165,8 @@ export default function ChartCard({
           interval={config.interval}
           isRunning={config.isRunning}
           onStatusChange={handleStatusChange}
+          positions={config.positions}
+          onConnectionFailed={handleConnectionFailed}
         />
       </div>
     </div>

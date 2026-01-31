@@ -9,7 +9,14 @@ import {
   HistogramSeries,
 } from 'lightweight-charts';
 import type { CandlestickData, Time, IChartApi, ISeriesApi } from 'lightweight-charts';
-import type { KlineData, ConnectionStatus } from '@/lib/trading/types';
+import type { KlineData, ConnectionStatus, ChartPositionData } from '@/lib/trading/types';
+
+// Price line with associated position data
+interface PositionPriceLine {
+  line: ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
+  position: ChartPositionData;
+  currentPnl: number;
+}
 
 interface ExtendedWebSocket extends WebSocket {
   __cleanupTimeout?: ReturnType<typeof setTimeout>;
@@ -20,6 +27,8 @@ interface TradingChartProps {
   interval: string;
   isRunning: boolean;
   onStatusChange: (status: ConnectionStatus) => void;
+  positions?: ChartPositionData[];
+  onConnectionFailed?: () => void; // Callback when connection fails after 3 attempts
 }
 
 // Real-time market data display
@@ -34,6 +43,8 @@ export default function TradingChart({
   interval,
   isRunning,
   onStatusChange,
+  positions = [],
+  onConnectionFailed,
 }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -42,10 +53,28 @@ export default function TradingChart({
   const wsRef = useRef<ExtendedWebSocket | null>(null);
   const wsGenerationRef = useRef(0);
 
+  // Store current price for PnL calculation
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+
+  // Store price lines for each position
+  const positionLinesRef = useRef<
+    Map<
+      number,
+      {
+        entryLine: ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
+        stopLossLine: ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null;
+        takeProfitLine: ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null;
+      }
+    >
+  >(new Map());
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wsError, setWsError] = useState<string | null>(null);
   const connectionAttemptRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef(0); // Track reconnection attempts
+  const onConnectionFailedRef = useRef(onConnectionFailed);
+  onConnectionFailedRef.current = onConnectionFailed;
 
   // Real-time market data
   const [marketData, setMarketData] = useState<MarketData>({
@@ -224,115 +253,232 @@ export default function TradingChart({
         clearTimeout(connectionAttemptRef.current);
         connectionAttemptRef.current = null;
       }
+      reconnectAttemptsRef.current = 0;
       return;
     }
 
-    const currentGeneration = ++wsGenerationRef.current;
+    // Reset reconnection attempts when starting fresh
+    reconnectAttemptsRef.current = 0;
 
-    if (wsRef.current && wsRef.current.__cleanupTimeout) {
-      clearTimeout(wsRef.current.__cleanupTimeout);
-      delete wsRef.current.__cleanupTimeout;
-    }
+    const connectWebSocket = (attemptNumber: number): (() => void) => {
+      const currentGeneration = ++wsGenerationRef.current;
 
-    onStatusChangeRef.current('connecting');
-    setWsError(null);
+      if (wsRef.current && wsRef.current.__cleanupTimeout) {
+        clearTimeout(wsRef.current.__cleanupTimeout);
+        delete wsRef.current.__cleanupTimeout;
+      }
 
-    const wsSymbol = symbol.toLowerCase();
-    const wsUrl = `wss://fstream.binance.com/ws/${wsSymbol}_perpetual@continuousKline_${interval}`;
-    const ws = new WebSocket(wsUrl) as ExtendedWebSocket;
-
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (currentGeneration === wsGenerationRef.current) {
-        onStatusChangeRef.current('connected');
+      // Only show connecting state on first attempt
+      if (attemptNumber === 0) {
+        onStatusChangeRef.current('connecting');
         setWsError(null);
       }
-    };
 
-    ws.onmessage = (event) => {
-      if (currentGeneration === wsGenerationRef.current) {
-        try {
-          const message = JSON.parse(event.data);
-          const kline = message.k;
+      const wsSymbol = symbol.toLowerCase();
+      const wsUrl = `wss://fstream.binance.com/ws/${wsSymbol}_perpetual@continuousKline_${interval}`;
+      const ws = new WebSocket(wsUrl) as ExtendedWebSocket;
 
-          if (kline && candlestickSeriesRef.current && volumeSeriesRef.current) {
-            const isUp = parseFloat(kline.c) >= parseFloat(kline.o);
-            const color = isUp ? '#22c55e80' : '#ef444480';
+      wsRef.current = ws;
 
-            // Update candlestick
-            const candlestickData: CandlestickData<Time> = {
-              time: Math.floor(kline.t / 1000) as Time,
-              open: parseFloat(kline.o),
-              high: parseFloat(kline.h),
-              low: parseFloat(kline.l),
-              close: parseFloat(kline.c),
-            };
+      ws.onopen = () => {
+        if (currentGeneration === wsGenerationRef.current) {
+          console.log(`[TradingChart] WebSocket connected (attempt ${attemptNumber + 1})`);
+          onStatusChangeRef.current('connected');
+          setWsError(null);
+          reconnectAttemptsRef.current = 0; // Reset on successful connection
+        }
+      };
 
-            candlestickSeriesRef.current.update(candlestickData);
+      ws.onmessage = (event) => {
+        if (currentGeneration === wsGenerationRef.current) {
+          try {
+            const message = JSON.parse(event.data);
+            const kline = message.k;
 
-            // Update volume
-            const volumeData = {
-              time: Math.floor(kline.t / 1000) as Time,
-              value: parseFloat(kline.v),
-              color,
-            };
+            if (kline && candlestickSeriesRef.current && volumeSeriesRef.current) {
+              const isUp = parseFloat(kline.c) >= parseFloat(kline.o);
+              const color = isUp ? '#22c55e80' : '#ef444480';
 
-            volumeSeriesRef.current.update(volumeData);
+              // Update candlestick
+              const candlestickData: CandlestickData<Time> = {
+                time: Math.floor(kline.t / 1000) as Time,
+                open: parseFloat(kline.o),
+                high: parseFloat(kline.h),
+                low: parseFloat(kline.l),
+                close: parseFloat(kline.c),
+              };
 
-            // Update real-time market data
-            setMarketData({
-              trades: parseInt(kline.n), // Number of trades
-              takerBuyVolume: parseFloat(kline.V), // Taker buy base asset volume
-              takerBuyRatio: parseFloat(kline.V) / parseFloat(kline.v), // Buy ratio
-            });
+              candlestickSeriesRef.current.update(candlestickData);
+
+              // Update volume
+              const volumeData = {
+                time: Math.floor(kline.t / 1000) as Time,
+                value: parseFloat(kline.v),
+                color,
+              };
+
+              volumeSeriesRef.current.update(volumeData);
+
+              // Update current price for PnL calculation
+              setCurrentPrice(parseFloat(kline.c));
+
+              // Update real-time market data
+              setMarketData({
+                trades: parseInt(kline.n),
+                takerBuyVolume: parseFloat(kline.V),
+                takerBuyRatio: parseFloat(kline.V) / parseFloat(kline.v),
+              });
+            }
+          } catch (error) {
+            console.error('[TradingChart] Error parsing WebSocket message:', error);
           }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
         }
-      }
+      };
+
+      ws.onerror = (error) => {
+        if (currentGeneration === wsGenerationRef.current) {
+          console.error(`[TradingChart] WebSocket error (attempt ${attemptNumber + 1}):`, error);
+          setWsError('WebSocket 连接失败，请检查网络或代理设置');
+          onStatusChangeRef.current('disconnected');
+        }
+      };
+
+      ws.onclose = (event) => {
+        if (currentGeneration === wsGenerationRef.current) {
+          console.log(
+            `[TradingChart] WebSocket closed (attempt ${attemptNumber + 1}):`,
+            event.code,
+            event.reason
+          );
+          onStatusChangeRef.current('disconnected');
+
+          // Auto-reconnect logic
+          if (isRunning && !event.wasClean) {
+            const nextAttempt = attemptNumber + 1;
+
+            if (nextAttempt < 3) {
+              // Retry after 3 seconds
+              console.log(
+                `[TradingChart] Reconnecting in 3 seconds... (attempt ${nextAttempt + 1}/3)`
+              );
+              connectionAttemptRef.current = window.setTimeout(() => {
+                connectWebSocket(nextAttempt);
+              }, 3000);
+            } else {
+              // 3 attempts failed, notify parent to close the chart
+              console.error('[TradingChart] Connection failed after 3 attempts, closing chart');
+              setWsError('连接失败，已自动关闭图表');
+              onConnectionFailedRef.current?.();
+            }
+          }
+        }
+      };
+
+      return () => {
+        if (ws.__cleanupTimeout) {
+          clearTimeout(ws.__cleanupTimeout);
+          delete ws.__cleanupTimeout;
+        }
+
+        const cleanupTimeout = setTimeout(() => {
+          if (wsRef.current === ws) {
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+              ws.close();
+            }
+            wsRef.current = null;
+          }
+        }, 100);
+
+        if (wsRef.current === ws) {
+          ws.__cleanupTimeout = cleanupTimeout;
+        }
+      };
     };
 
-    ws.onerror = (error) => {
-      if (currentGeneration === wsGenerationRef.current) {
-        console.error('WebSocket error:', error);
-        setWsError('WebSocket 连接失败，请检查网络或代理设置');
-        onStatusChangeRef.current('disconnected');
-      }
-    };
-
-    ws.onclose = (event) => {
-      if (currentGeneration === wsGenerationRef.current) {
-        console.log('WebSocket closed:', event.code, event.reason);
-        onStatusChangeRef.current('disconnected');
-        if (isRunning && !event.wasClean) {
-          connectionAttemptRef.current = window.setTimeout(() => {
-            console.log('Attempting to reconnect...');
-          }, 3000);
-        }
-      }
-    };
+    const cleanup = connectWebSocket(0);
 
     return () => {
-      if (ws.__cleanupTimeout) {
-        clearTimeout(ws.__cleanupTimeout);
-        delete ws.__cleanupTimeout;
+      if (connectionAttemptRef.current) {
+        clearTimeout(connectionAttemptRef.current);
+        connectionAttemptRef.current = null;
       }
-
-      const cleanupTimeout = setTimeout(() => {
-        if (wsRef.current === ws) {
-          if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-            ws.close();
-          }
-          wsRef.current = null;
-        }
-      }, 100);
-
-      if (wsRef.current === ws) {
-        ws.__cleanupTimeout = cleanupTimeout;
-      }
+      cleanup();
+      reconnectAttemptsRef.current = 0;
     };
-  }, [isRunning, symbol, interval]);
+  }, [isRunning, symbol, interval]); // onConnectionFailed is stored in ref, not needed in deps
+
+  // Handle position data changes - add/remove price lines for all positions
+  useEffect(() => {
+    if (!candlestickSeriesRef.current) return;
+
+    const series = candlestickSeriesRef.current;
+    const newLinesMap = new Map();
+
+    // Remove old lines
+    for (const [positionId, lines] of positionLinesRef.current) {
+      series.removePriceLine(lines.entryLine);
+      if (lines.stopLossLine) series.removePriceLine(lines.stopLossLine);
+      if (lines.takeProfitLine) series.removePriceLine(lines.takeProfitLine);
+    }
+    positionLinesRef.current.clear();
+
+    // Create new lines for each position
+    for (const position of positions) {
+      // Entry line (blue, solid)
+      const entryLine = series.createPriceLine({
+        price: position.entryPrice,
+        color: '#3b82f6',
+        lineWidth: 2,
+        lineStyle: 2, // Solid
+        axisLabelVisible: true,
+        title: `${position.traderName} 开仓`,
+      });
+
+      // Stop loss line (red, dashed)
+      let stopLossLine = null;
+      if (position.stopLossPrice) {
+        stopLossLine = series.createPriceLine({
+          price: position.stopLossPrice,
+          color: '#ef4444',
+          lineWidth: 2,
+          lineStyle: 3, // Dashed
+          axisLabelVisible: true,
+          title: `${position.traderName} 止损`,
+        });
+      }
+
+      // Take profit line (green, dashed)
+      let takeProfitLine = null;
+      if (position.takeProfitPrice) {
+        takeProfitLine = series.createPriceLine({
+          price: position.takeProfitPrice,
+          color: '#22c55e',
+          lineWidth: 2,
+          lineStyle: 3, // Dashed
+          axisLabelVisible: true,
+          title: `${position.traderName} 止盈`,
+        });
+      }
+
+      newLinesMap.set(position.positionId, {
+        entryLine,
+        stopLossLine,
+        takeProfitLine,
+      });
+    }
+
+    positionLinesRef.current = newLinesMap;
+
+    // Cleanup on unmount
+    return () => {
+      for (const lines of positionLinesRef.current.values()) {
+        series.removePriceLine(lines.entryLine);
+        if (lines.stopLossLine) series.removePriceLine(lines.stopLossLine);
+        if (lines.takeProfitLine) series.removePriceLine(lines.takeProfitLine);
+      }
+      positionLinesRef.current.clear();
+    };
+  }, [positions]);
 
   return (
     <div className="relative">
@@ -363,6 +509,62 @@ export default function TradingChart({
           </span>
         </div>
       </div>
+
+      {/* Position Info Panels (one per position) */}
+      {positions.length > 0 && (
+        <div className="absolute right-4 top-4 z-10 flex flex-col gap-2">
+          {positions.map((position) => {
+            // Calculate real-time PnL
+            const realtimePnl = currentPrice
+              ? (position.side === 'long'
+                  ? (currentPrice - position.entryPrice) / position.entryPrice
+                  : (position.entryPrice - currentPrice) / position.entryPrice) * 100
+              : 0;
+
+            return (
+              <div
+                key={position.positionId}
+                className="rounded-lg bg-gray-900/95 border border-gray-700/50 px-3 py-2 text-xs"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col">
+                    <span className="text-gray-400">{position.traderName}</span>
+                    <span className="text-sm font-semibold text-white">
+                      {position.side === 'long' ? '做多' : '做空'}
+                    </span>
+                  </div>
+                  <div className="w-px bg-gray-700" />
+                  <div className="flex flex-col">
+                    <span className="text-gray-400">开仓价</span>
+                    <span className="text-sm font-semibold text-blue-400">
+                      {position.entryPrice.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="w-px bg-gray-700" />
+                  <div className="flex flex-col">
+                    <span className="text-gray-400">实时收益</span>
+                    <span
+                      className={`text-sm font-semibold ${
+                        realtimePnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {realtimePnl >= 0 ? '+' : ''}
+                      {realtimePnl.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="w-px bg-gray-700" />
+                  <div className="flex flex-col">
+                    <span className="text-gray-400">仓位</span>
+                    <span className="text-sm font-semibold text-sky-400">
+                      {position.positionSize.toFixed(0)} USDT
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Loading indicator */}
       {isLoading && !wsError && (

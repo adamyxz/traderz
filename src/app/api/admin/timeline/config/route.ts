@@ -10,7 +10,7 @@ import type { TimelineConfigResponse } from '@/lib/timeline/types';
 
 export async function GET() {
   try {
-    const scheduler = getTimelineScheduler();
+    const scheduler = await getTimelineScheduler();
     const config = await scheduler.getConfig();
     const activeTraderCount = await scheduler.getActiveTraderCount();
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const scheduler = getTimelineScheduler();
+    const scheduler = await getTimelineScheduler();
     await scheduler.setConfig({ enabled });
 
     const config = await scheduler.getConfig();

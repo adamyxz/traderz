@@ -1,5 +1,5 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { optimizeKlineData } from '@/lib/toon';
+import { optimizeKlineData, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
@@ -105,25 +105,18 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       }
     );
 
-    // 构建CSV，根据优化后的字段动态生成表头和数据
-    const keys =
-      optimizedKlines.length > 0
-        ? Object.keys(optimizedKlines[0])
-        : ['dot', 'o', 'h', 'l', 'c', 'v'];
-    const csvHeader = keys.join(',');
-    const csvRows = optimizedKlines.map((row: Record<string, unknown>) => {
-      return keys.map((k) => row[k]).join(',');
+    // 构建超紧凑CSV - 移除时间戳列, 行序隐含时间顺序
+    const csvData = toCompactCSV(optimizedKlines, {
+      excludeColumns: ['dot'], // 移除相对时间戳
+      defaultValuePlaceholder: '', // 0值用空字符串表示
     });
-    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
 
     const result = {
       s: symbol,
       i: interval,
       fmt: 'csv',
-      bT: baseTime, // base timestamp for relative times
+      bT: baseTime,
       d: csvData,
-      cnt: klines.length,
-      fa: new Date().toISOString(),
     };
 
     return {

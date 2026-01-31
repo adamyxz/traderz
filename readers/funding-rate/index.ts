@@ -1,21 +1,25 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { trimPrice } from '@/lib/toon';
+import { toRelativeTimestamps, trimPrice, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
 // 输入验证
 const InputSchema = z.object({
-  symbol: z.string().regex(/^$|^[A-Z]{2,20}USDT$/, {
-    message: '交易对格式错误，应为 BTCUSDT 格式或留空',
-  }),
+  symbol: z
+    .string()
+    .regex(/^$|^[A-Z]{2,20}USDT$/, {
+      message: '交易对格式错误，应为 BTCUSDT 格式或留空',
+    })
+    .optional()
+    .default(''),
   limit: z.coerce.number().min(1).max(1000).optional().default(100),
 });
 
 // 资金费率历史类型
 interface FundingRateInfo {
+  T: number; // fundingTime
   s: string; // symbol
   fr: string; // fundingRate
-  ft: number; // fundingTime
   mp: string; // markPrice
 }
 
@@ -62,9 +66,9 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
     // 解析资金费率历史数据
     const fundingRates: FundingRateInfo[] = rawData.map(
       (item: { symbol: string; fundingRate: string; fundingTime: number; markPrice: string }) => ({
+        T: item.fundingTime,
         s: item.symbol,
         fr: trimPrice(item.fundingRate),
-        ft: item.fundingTime,
         mp: trimPrice(item.markPrice),
       })
     );
@@ -77,8 +81,6 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
           fmt: 'csv',
           s: symbol || '',
           d: '',
-          cnt: 0,
-          fa: new Date().toISOString(),
         },
         metadata: {
           executionTime: Date.now() - startTime,
@@ -88,20 +90,28 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       };
     }
 
-    // 构建 CSV（动态生成表头）
-    const keys = Object.keys(fundingRates[0]);
-    const csvHeader = keys.join(',');
-    const csvRows = fundingRates.map((rate) => {
-      return keys.map((k) => rate[k as keyof FundingRateInfo]).join(',');
+    // 应用相对时间戳优化
+    const { baseTime, records: optimizedData } = toRelativeTimestamps(
+      fundingRates as unknown as Record<string, unknown>[],
+      'T'
+    );
+
+    // 验证优化后的数据
+    if (!optimizedData || !Array.isArray(optimizedData)) {
+      throw new Error('数据优化失败');
+    }
+
+    // 构建超紧凑CSV - 移除时间戳和交易对列
+    const csvData = toCompactCSV(optimizedData, {
+      excludeColumns: ['dT', 's'], // 移除相对时间戳和交易对
+      defaultValuePlaceholder: '', // 0值用空字符串表示
     });
-    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
 
     const result = {
       fmt: 'csv',
       s: symbol || 'ALL', // symbol or ALL if empty
+      bT: baseTime,
       d: csvData,
-      cnt: fundingRates.length,
-      fa: new Date().toISOString(),
     };
 
     return {

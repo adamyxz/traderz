@@ -86,6 +86,41 @@ export default function PositionsAdminPage() {
     };
   }, []);
 
+  // Auto-refresh for price updates (incremental update, no flicker)
+  useEffect(() => {
+    // Update prices every 3 seconds
+    const intervalId = setInterval(async () => {
+      try {
+        const response = await fetch('/api/positions/price-updates');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            // Incremental update: only update price-related fields
+            setPositions((prevPositions) =>
+              prevPositions.map((pos) => {
+                const update = result.data.find(
+                  (u: { positionId: number }) => u.positionId === pos.id
+                );
+                if (update) {
+                  return {
+                    ...pos,
+                    currentPrice: update.currentPrice,
+                    unrealizedPnl: update.unrealizedPnl,
+                  };
+                }
+                return pos;
+              })
+            );
+          }
+        }
+      } catch (error) {
+        console.error('[PositionsPage] Error in price update:', error);
+      }
+    }, 3000); // 3 seconds
+
+    return () => clearInterval(intervalId);
+  }, []);
+
   const fetchData = async () => {
     try {
       setLoading(true);

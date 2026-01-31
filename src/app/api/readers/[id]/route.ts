@@ -83,9 +83,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const metadataContent = await readFile(metadataPath, 'utf-8');
         const metadata = JSON.parse(metadataContent);
 
-        // 更新name和description
+        // 更新name, description, mandatory
         metadata.name = newName;
         metadata.description = body.description;
+        metadata.mandatory = body.mandatory || false;
 
         // 写回文件
         const newMetadataPath = join(process.cwd(), newDir, 'metadata.json');
@@ -105,6 +106,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         description: body.description,
         timeout: body.timeout,
         scriptPath: newScriptPath,
+        mandatory: body.mandatory || false,
         updatedAt: new Date(),
       })
       .where(eq(readers.id, Number(id)))

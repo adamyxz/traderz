@@ -17,6 +17,13 @@ export function buildMicroDecisionSystemPrompt(trader: Trader): string {
 - Position Stop Loss: ${trader.positionStopLoss}%
 - Position Take Profit: ${trader.positionTakeProfit}%
 
+**Decision Guidelines:**
+- Confidence 0.7+ = STRONG SIGNAL - TAKE ACTION (open/close position)
+- Confidence 0.5-0.69 = MODERATE SIGNAL - Consider taking small positions or partial action
+- Confidence below 0.5 = INSUFFICIENT SIGNALS - HOLD
+- IMPORTANT: Being too conservative has opportunity costs. When signals are moderately clear (0.5+), lean towards taking action rather than always holding.
+- Use hold only when signals are truly unclear, conflicting, or risk/reward is unfavorable.
+
 Analyze the provided market data for a SINGLE K-line interval and provide a micro-decision.
 Return your decision as a structured JSON response.`;
 }
@@ -35,6 +42,15 @@ export function buildMicroDecisionUserPrompt(args: {
 
   let prompt = `**Trading Pair:** ${tradingPair}\n`;
   prompt += `**K-line Interval:** ${interval}\n\n`;
+
+  // Position status awareness
+  if (currentPositions.length === 0) {
+    prompt += `**Position Status:** NO OPEN POSITIONS\n`;
+    prompt += `IMPORTANT: The system currently has no market exposure. Lower your action threshold slightly - when confidence is 0.5+, consider taking reasonable positions to enter the market rather than waiting for perfect signals.\n\n`;
+  } else {
+    prompt += `**Position Status:** ${currentPositions.length} OPEN POSITION(S)\n`;
+    prompt += `Focus on both managing existing positions and finding new opportunities.\n\n`;
+  }
 
   if (currentPositions.length > 0) {
     prompt += `**Current Open Positions:**\n`;
@@ -89,6 +105,14 @@ export function buildComprehensiveDecisionSystemPrompt(trader: Trader): string {
 - Max Positions: ${trader.maxPositions}
 - Max Position Size: $${trader.maxPositionSize}
 
+**Decision Guidelines:**
+- Confidence 0.7+ = STRONG CONSENSUS - TAKE ACTION with appropriate position size
+- Confidence 0.5-0.69 = MODERATE CONFIDENCE - When 2+ intervals agree, consider taking action
+- Confidence below 0.5 = INSUFFICIENT CONSENSUS - HOLD
+- IMPORTANT: Missing opportunities in trading has a real cost. When multiple timeframes show alignment (even with moderate confidence), lean towards taking calculated positions.
+- Weigh longer timeframes (1h+, 4h) more heavily than shorter ones for trend confirmation.
+- Look for confluence: when 3+ intervals align in the same direction, that's a strong signal.
+
 Analyze micro-decisions from multiple K-line intervals and make a comprehensive trading decision.
 Weigh each interval's decision based on timeframe relevance, confidence scores, and strategy alignment.
 
@@ -107,6 +131,15 @@ export function buildComprehensiveDecisionUserPrompt(args: {
   const { microDecisions, currentPositions, tradingPair } = args;
 
   let prompt = `**Trading Pair:** ${tradingPair}\n\n`;
+
+  // Position status awareness
+  if (currentPositions.length === 0) {
+    prompt += `**Position Status:** NO OPEN POSITIONS\n`;
+    prompt += `REMINDER: The system has no market exposure. When micro-decisions show moderate alignment (multiple intervals suggesting the same action with 0.5+ confidence), consider entering the market rather than holding.\n\n`;
+  } else {
+    prompt += `**Position Status:** ${currentPositions.length} OPEN POSITION(S)\n`;
+    prompt += `Balance between managing existing positions and seeking new opportunities.\n\n`;
+  }
 
   prompt += `**Current Open Positions:**\n`;
   if (currentPositions.length > 0) {

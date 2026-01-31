@@ -7,8 +7,62 @@ import {
   traderKlineIntervals,
   traderReaders,
   readers,
+  systemConfigurations,
 } from '@/db/schema';
 import { generateMultipleTraders, type TraderWithRelations } from '@/lib/deepseek';
+import { eq } from 'drizzle-orm';
+
+/**
+ * Fetch minimum kline interval from system configuration
+ * Defaults to 900 seconds (15 minutes) if not configured
+ */
+async function getMinKlineInterval(): Promise<number> {
+  try {
+    const configs = await db
+      .select()
+      .from(systemConfigurations)
+      .where(eq(systemConfigurations.key, 'min_kline_interval_seconds'));
+
+    if (configs.length > 0 && configs[0].value) {
+      const seconds = Number(configs[0].value);
+      if (!isNaN(seconds) && seconds >= 60) {
+        return seconds;
+      }
+    }
+  } catch (error) {
+    console.error('[Generate API] Error fetching min kline interval:', error);
+  }
+  // Default to 15 minutes
+  return 900;
+}
+
+/**
+ * Fetch trader limits from system configuration
+ */
+async function getTraderLimits(): Promise<{
+  maxIntervalsPerTrader: number;
+  maxOptionalReadersPerTrader: number;
+}> {
+  try {
+    const configs = await db.select().from(systemConfigurations);
+    const configMap = new Map(configs.map((c) => [c.key, c.value]));
+
+    const maxIntervals = configMap.get('max_intervals_per_trader');
+    const maxReaders = configMap.get('max_optional_readers_per_trader');
+
+    return {
+      maxIntervalsPerTrader: maxIntervals ? Number(maxIntervals) : 4,
+      maxOptionalReadersPerTrader: maxReaders ? Number(maxReaders) : 5,
+    };
+  } catch (error) {
+    console.error('[Generate API] Error fetching trader limits:', error);
+  }
+  // Defaults
+  return {
+    maxIntervalsPerTrader: 4,
+    maxOptionalReadersPerTrader: 5,
+  };
+}
 
 /**
  * POST /api/traders/generate
@@ -134,6 +188,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Map kline interval codes to IDs
+        // Get minimum interval and trader limits from system configuration
+        const MIN_INTERVAL_SECONDS = await getMinKlineInterval();
+        const traderLimits = await getTraderLimits();
+        console.log(
+          `[Generate API] Using min interval: ${MIN_INTERVAL_SECONDS}s, limits:`,
+          traderLimits
+        );
+
         let preferredKlineIntervalIds: number[] = [];
         if (
           traderConfig.preferredKlineIntervals &&
@@ -144,9 +206,34 @@ export async function POST(request: NextRequest) {
               const normalizedCode = code.toLowerCase().trim();
               // Try to find the interval by code (case-insensitive)
               const interval = allIntervals.find((i) => i.code.toLowerCase() === normalizedCode);
-              return interval ? interval.id : null;
+
+              if (!interval) {
+                console.warn(`[Generate API] Kline interval not found: ${code}, skipping`);
+                return null;
+              }
+
+              // Validate minimum interval
+              if (interval.seconds < MIN_INTERVAL_SECONDS) {
+                console.warn(
+                  `[Generate API] Kline interval ${code} (${interval.seconds}s) is below minimum, skipping`
+                );
+                return null;
+              }
+
+              return interval.id;
             })
             .filter((id): id is number => id !== null);
+
+          // Validate interval count limit
+          if (preferredKlineIntervalIds.length > traderLimits.maxIntervalsPerTrader) {
+            console.warn(
+              `[Generate API] Too many intervals (${preferredKlineIntervalIds.length}), limiting to ${traderLimits.maxIntervalsPerTrader}`
+            );
+            preferredKlineIntervalIds = preferredKlineIntervalIds.slice(
+              0,
+              traderLimits.maxIntervalsPerTrader
+            );
+          }
         }
 
         // Convert numeric fields to strings as expected by database schema
@@ -197,7 +284,18 @@ export async function POST(request: NextRequest) {
           Array.isArray(traderConfig.selectedReaders) &&
           traderConfig.selectedReaders.length > 0
         ) {
-          const readerRelations = traderConfig.selectedReaders.map((readerId: number) => ({
+          // Validate and limit reader count
+          const limitedReaders = traderConfig.selectedReaders.slice(
+            0,
+            traderLimits.maxOptionalReadersPerTrader
+          );
+          if (traderConfig.selectedReaders.length > traderLimits.maxOptionalReadersPerTrader) {
+            console.warn(
+              `[Generate API] Too many readers (${traderConfig.selectedReaders.length}), limiting to ${traderLimits.maxOptionalReadersPerTrader}`
+            );
+          }
+
+          const readerRelations = limitedReaders.map((readerId: number) => ({
             traderId,
             readerId,
           }));

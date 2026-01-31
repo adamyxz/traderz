@@ -52,11 +52,19 @@ export interface ReaderModule {
   validate?: (input: ReaderInput) => { valid: boolean; errors?: string[] };
 }
 
+// 标准参数类型（由 executor 自动注入）
+export type StandardParameterType = 'symbol' | 'interval';
+
 // Reader元数据
 export interface ReaderMetadata {
   name: string;
   description: string;
   parameters: ReaderParameterDefinition[];
+  // 声明需要哪些标准参数，executor 会自动注入
+  // 支持参数别名映射，例如 { period: 'interval' } 表示 reader 的 'period' 参数接收 executor 的 'interval' 值
+  standardParameters?: Partial<Record<StandardParameterType, string>>;
+  // 是否为强制 reader（所有 trader 心跳都会包含）
+  mandatory?: boolean;
 }
 
 // Reader database type
@@ -69,6 +77,7 @@ export interface Reader {
   scriptPath: string;
   scriptHash: string | null;
   timeout: number;
+  mandatory: boolean; // Whether reader is mandatory (always included in heartbeats)
   parameters?: ReaderParameter[];
 }
 

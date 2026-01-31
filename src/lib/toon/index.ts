@@ -378,3 +378,42 @@ export function optimizeKlineData(
 
   return { baseTime, data: processedKlines };
 }
+
+/**
+ * Optimization 6: Ultra-compact CSV without timestamps
+ * Removes time column entirely since row order implies time sequence
+ * Useful for LLM analysis where exact timestamps don't matter
+ */
+export function toCompactCSV(
+  records: Record<string, unknown>[],
+  options: {
+    excludeColumns?: string[]; // Columns to exclude (e.g., ['dT', 'T'])
+    defaultValuePlaceholder?: string; // How to represent default values
+  } = {}
+): string {
+  const { excludeColumns = ['dT', 'T', 'dT'], defaultValuePlaceholder = '' } = options;
+
+  if (records.length === 0) {
+    return '';
+  }
+
+  // Filter out excluded columns
+  const allKeys = Object.keys(records[0]);
+  const keys = allKeys.filter((k) => !excludeColumns.includes(k));
+
+  const csvHeader = keys.join(',');
+  const csvRows = records.map((row: Record<string, unknown>) => {
+    return keys
+      .map((k) => {
+        const val = row[k];
+        // Use placeholder for default values (0, empty, null)
+        if (val === 0 || val === '0' || val === null || val === '') {
+          return defaultValuePlaceholder;
+        }
+        return val;
+      })
+      .join(',');
+  });
+
+  return `${csvHeader}\n${csvRows.join('\n')}`;
+}

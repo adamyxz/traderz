@@ -217,8 +217,32 @@ export const selectTradingContextTool = tool(
       tradingPair: z.string().describe('Trading pair symbol (e.g., BTCUSDT, ETHUSDT)'),
       klineIntervals: z
         .array(z.string())
+        .min(2, 'At least 2 intervals required')
+        .max(4, 'Maximum 4 intervals allowed')
+        .refine(
+          (intervals) => {
+            const validIntervals = [
+              '15m',
+              '30m',
+              '1h',
+              '2h',
+              '4h',
+              '6h',
+              '8h',
+              '12h',
+              '1d',
+              '3d',
+              '1w',
+            ];
+            return intervals.every((i) => validIntervals.includes(i));
+          },
+          {
+            message:
+              'Only 15m and above intervals are allowed. Valid options: 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w',
+          }
+        )
         .describe(
-          'Array of 2-4 kline interval codes (e.g., ["15m", "1h", "4h"]) that match the trading style. Only use 15m and above intervals.'
+          'Array of 2-4 kline interval codes. Minimum: 15m. Valid: 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w'
         ),
       reasoning: z
         .string()

@@ -1,6 +1,10 @@
 {
   "name": "global-ls-account-ratio",
   "description": "获取币安全局多空账户数比数据，包含所有账户的多空账户数比值、多仓账户数比例、空仓账户数比例",
+  "standardParameters": {
+    "symbol": "symbol",
+    "interval": "period"
+  },
   "parameters": [
     {
       "name": "symbol",

@@ -12,7 +12,7 @@ export const MicroDecisionSchema = z.object({
     .min(0)
     .max(1)
     .describe(
-      'Confidence level from 0 to 1. Use this scale: 0.9-1.0 = very strong signal with multiple confirmations, 0.7-0.89 = good signal with clear indicators, 0.5-0.69 = moderate signal with some uncertainty, 0.3-0.49 = weak signal with mixed indicators, 0.0-0.29 = very weak or conflicting signals. Be honest about uncertainty - if signals are unclear, use a lower score.'
+      'Confidence level from 0 to 1. Use this scale: 0.9-1.0 = very strong signal with multiple confirmations (take full position), 0.7-0.89 = good signal with clear indicators (take action), 0.5-0.69 = moderate signal - lean towards taking small positions rather than holding, 0.3-0.49 = weak signal with mixed indicators (hold), 0.0-0.29 = very weak or conflicting signals (hold). IMPORTANT: When signals are moderately clear (0.5+), favor taking action over excessive caution. Missing opportunities has a cost.'
     ),
   reasoning: z.string(),
   technicalSignals: z.object({
@@ -46,7 +46,7 @@ export const ComprehensiveDecisionSchema = z.object({
     .min(0)
     .max(1)
     .describe(
-      'Overall confidence level from 0 to 1 for the comprehensive decision. Use this scale: 0.9-1.0 = very strong consensus across intervals with clear risk/reward, 0.7-0.89 = good agreement between timeframes with solid rationale, 0.5-0.69 = moderate confidence with some conflicting signals, 0.3-0.49 = low confidence with significant disagreements, 0.0-0.29 = very weak or unclear signals. Weight the confidence based on alignment between micro-decisions and clarity of the overall setup.'
+      'Overall confidence level from 0 to 1 for the comprehensive decision. Use this scale: 0.9-1.0 = very strong consensus across intervals with clear risk/reward (take full position), 0.7-0.89 = good agreement between timeframes with solid rationale (take action), 0.5-0.69 = moderate confidence - when multiple intervals agree, lean towards taking action rather than holding, 0.3-0.49 = low confidence with significant disagreements (hold), 0.0-0.29 = very weak or unclear signals (hold). IMPORTANT: Weight the confidence based on alignment between micro-decisions. When 2+ intervals agree with 0.5+ confidence each, consider taking action even if overall confidence is moderate.'
     ),
   reasoning: z.string(),
   intervalAnalysis: z.array(

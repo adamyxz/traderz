@@ -125,14 +125,27 @@ export default function ReadersAdminPage() {
               {filteredReaders.map((reader) => (
                 <div
                   key={reader.id}
-                  className="group relative overflow-hidden rounded-2xl border border-gray-700 bg-gradient-to-br from-gray-800 to-gray-900 p-5 transition-all hover:border-gray-600 hover:shadow-xl"
+                  className={`group relative overflow-hidden rounded-2xl border p-5 transition-all hover:shadow-xl ${
+                    reader.mandatory
+                      ? 'border-orange-500/50 bg-gradient-to-br from-gray-800 to-orange-950/30'
+                      : 'border-gray-700 bg-gradient-to-br from-gray-800 to-gray-900'
+                  }`}
                 >
                   {/* Header */}
-                  <div className="mb-3">
-                    <h3 className="text-lg font-bold text-white truncate">{reader.name}</h3>
-                    <p className="mt-1 text-sm text-gray-400 line-clamp-2 h-10">
-                      {reader.description || 'No description'}
-                    </p>
+                  <div className="mb-3 flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-white truncate">{reader.name}</h3>
+                        {reader.mandatory && (
+                          <span className="rounded-full bg-orange-500/20 px-2 py-0.5 text-xs font-medium text-orange-400 border border-orange-500/30">
+                            Mandatory
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-gray-400 line-clamp-2 h-10">
+                        {reader.description || 'No description'}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Script Path */}
@@ -256,6 +269,7 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
     name: reader.name,
     description: reader.description || '',
     timeout: reader.timeout,
+    mandatory: reader.mandatory || false,
   });
 
   // Store parameter default values by parameter ID
@@ -355,6 +369,30 @@ function EditReaderModal({ reader, onClose, onSuccess }: EditReaderModalProps) {
               onChange={(e) => setFormData({ ...formData, timeout: Number(e.target.value) })}
               className="w-full rounded-lg border border-gray-600 bg-gray-700/50 px-4 py-2.5 text-white focus:border-sky-500 focus:outline-none"
             />
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm font-medium text-white">Mandatory Reader</label>
+                <p className="mt-1 text-xs text-gray-400">
+                  Mandatory readers are automatically included in all trader heartbeats
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, mandatory: !formData.mandatory })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  formData.mandatory ? 'bg-orange-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    formData.mandatory ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-4">

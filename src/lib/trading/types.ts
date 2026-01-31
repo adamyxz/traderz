@@ -37,6 +37,19 @@ export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
 // Layout mode for multi-chart view
 export type ChartLayout = '1x1' | '2x1' | '1x2' | '2x2';
 
+// Position data for auto-generated charts
+export interface ChartPositionData {
+  positionId: number;
+  traderId: number;
+  traderName: string;
+  entryPrice: number;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  positionSize: number;
+  returnRate: number;
+  side: 'long' | 'short';
+}
+
 // Single chart configuration
 export interface ChartConfig {
   id: string;
@@ -44,6 +57,7 @@ export interface ChartConfig {
   interval: string;
   isRunning: boolean;
   connectionStatus: ConnectionStatus;
+  positions?: ChartPositionData[]; // Array of positions for this symbol (auto-generated charts)
 }
 
 // Charts manager state

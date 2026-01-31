@@ -9,6 +9,61 @@ import { createTraderTool, selectTradingContextTool, selectReadersTool } from '.
 import type { Trader, tradingPairs, klineIntervals } from '@/db/schema';
 
 /**
+ * Fetch minimum kline interval from system configuration
+ * Defaults to 900 seconds (15 minutes) if not configured
+ */
+async function getMinKlineInterval(): Promise<number> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/admin/system-settings`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.data?.min_kline_interval_seconds?.value) {
+        const seconds = Number(data.data.min_kline_interval_seconds.value);
+        if (!isNaN(seconds) && seconds >= 60) {
+          return seconds;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[getMinKlineInterval] Error fetching min interval:', error);
+  }
+  // Default to 15 minutes
+  return 900;
+}
+
+/**
+ * Fetch trader limits from system configuration
+ */
+async function getTraderLimits(): Promise<{
+  maxIntervalsPerTrader: number;
+  maxOptionalReadersPerTrader: number;
+}> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const response = await fetch(`${baseUrl}/api/admin/system-settings`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        const maxIntervals = data.data?.max_intervals_per_trader?.value;
+        const maxReaders = data.data?.max_optional_readers_per_trader?.value;
+        return {
+          maxIntervalsPerTrader: maxIntervals ? Number(maxIntervals) : 4,
+          maxOptionalReadersPerTrader: maxReaders ? Number(maxReaders) : 5,
+        };
+      }
+    }
+  } catch (error) {
+    console.error('[getTraderLimits] Error fetching limits:', error);
+  }
+  // Defaults
+  return {
+    maxIntervalsPerTrader: 4,
+    maxOptionalReadersPerTrader: 5,
+  };
+}
+
+/**
  * Extended Trader type with relations
  */
 export interface TraderWithRelations extends Trader {
@@ -46,7 +101,6 @@ When creating a trader:
 - Keep descriptions CONCISE and EFFICIENT (1-2 sentences max)
 - Focus on key differentiating factors: strategy, timeframe, risk level, and unique approach
 - Avoid verbose explanations - save context for the actual parameters
-- Example: "Conservative BTC trend follower using 4h/1d intervals with 3x leverage and tight stops."
 
 Use the create_trader tool to generate each trader configuration. All parameters must be carefully considered and validated.`;
 
@@ -123,6 +177,10 @@ async function selectTradingContext(
 
   const tools = [selectTradingContextTool];
 
+  // Get trader limits from system configuration
+  const limits = await getTraderLimits();
+  console.log('[selectTradingContext] Using trader limits:', limits);
+
   const existingPreferences = formatExistingTradingPreferences(existingTraders);
   const availablePairs = tradingContext.tradingPairs.map((p) => p.symbol).join(', ');
   const availableIntervals = tradingContext.klineIntervals
@@ -142,8 +200,10 @@ Available kline intervals: ${availableIntervals}
 
 Requirements:
 1. Feel encouraged to explore new combinations and diverse strategies
-2. Select 2-4 intervals that work together (e.g., 1m+5m for scalping, 1h+4h+1d for swing)
-3. Consider both unexplored combinations and proven strategies
+2. Consider both unexplored combinations and proven strategies
+3. Select ${limits.maxIntervalsPerTrader} or fewer intervals (maximum allowed)
+
+IMPORTANT: Only select intervals from the "Available kline intervals" list. Do not use intervals smaller than the minimum allowed.
 
 Use the select_trading_context tool to make your selection.`;
 
@@ -192,12 +252,17 @@ Use the select_trading_context tool to make your selection.`;
 
 /**
  * Fetch available trading pairs and intervals for context
+ * Filters intervals based on system minimum interval setting
  */
 async function fetchTradingContext(): Promise<{
   tradingPairs: Array<{ symbol: string; baseAsset: string; quoteAsset: string }>;
   klineIntervals: Array<{ code: string; label: string; seconds: number }>;
 }> {
   try {
+    // Get minimum interval from system configuration
+    const minIntervalSeconds = await getMinKlineInterval();
+    console.log(`[fetchTradingContext] Using minimum kline interval: ${minIntervalSeconds}s`);
+
     const [pairsRes, intervalsRes] = await Promise.all([
       fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/trading-pairs`),
       fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/kline-intervals`),
@@ -208,9 +273,18 @@ async function fetchTradingContext(): Promise<{
       intervalsRes.ok ? intervalsRes.json() : Promise.resolve([]),
     ]);
 
+    // Filter intervals based on minimum setting
+    const filteredIntervals = intervalsData.filter(
+      (i: { seconds: number }) => i.seconds >= minIntervalSeconds
+    );
+
+    console.log(
+      `[fetchTradingContext] Filtered ${intervalsData.length} intervals to ${filteredIntervals.length} (>= ${minIntervalSeconds}s)`
+    );
+
     return {
       tradingPairs: pairsData,
-      klineIntervals: intervalsData,
+      klineIntervals: filteredIntervals,
     };
   } catch (error) {
     console.error('[fetchTradingContext] Error:', error);
@@ -288,6 +362,10 @@ async function selectReadersForTrader(
 
   const tools = [selectReadersTool];
 
+  // Get trader limits from system configuration
+  const limits = await getTraderLimits();
+  console.log('[selectReadersForTrader] Using trader limits:', limits);
+
   const readersList = formatReadersForPrompt(availableReaders);
 
   const userPrompt = `Select the most appropriate data readers for this trader configuration.
@@ -307,19 +385,11 @@ async function selectReadersForTrader(
 ${readersList}
 
 **Selection Guidelines:**
-1. Choose 2-5 readers that are most relevant to this trader's strategy
-2. Consider the trading style: trend followers need different data than scalpers
-3. Include readers for different data types (price data, indicators, market sentiment, etc.)
-4. Avoid redundant readers that provide similar information
-5. Prioritize readers that match the timeframe and analysis approach
-
-**Reader Selection Strategy by Trading Style:**
-- **Trend Following**: Kline data, moving averages, volume analysis
-- **Oscillation/Reversal**: RSI, MACD, Bollinger Bands, overbought/oversold indicators
-- **Scalping**: High-frequency price data, order book, short-term momentum
-- **Swing**: Daily/weekly data, support/resistance levels, market structure
-- **Arbitrage**: Price feeds from multiple exchanges, correlation data
-- **Market Making**: Order book depth, spread analysis, volatility metrics
+1. Choose ${limits.maxOptionalReadersPerTrader} or fewer optional readers (maximum allowed)
+2. Select readers that are most relevant to this trader's strategy
+3. Note: Mandatory readers will be automatically included in heartbeats and don't count toward this limit
+3. Avoid redundant readers that provide similar information
+4. Prioritize readers that match the timeframe and analysis approach
 
 Use the select_readers tool to make your selection.`;
 
@@ -329,12 +399,11 @@ Your role is to analyze a trader's configuration and select the most appropriate
 
 **Key Principles:**
 1. **Relevance**: Only select readers that provide data directly useful for the trader's strategy
-2. **Diversity**: Include readers that provide different types of data (price, indicators, sentiment, etc.)
-3. **Efficiency**: Don't overload the system with redundant or unnecessary readers
-4. **Match Strategy**: Align data sources with the trader's timeframe and approach
-5. **Practicality**: Ensure selected readers work together cohesively
+2. **Efficiency**: Don't overload the system with redundant or unnecessary readers
+3. **Match Strategy**: Align data sources with the trader's timeframe and approach
+4. **Practicality**: Ensure selected readers work together cohesively
 
-Select 2-5 readers that create a well-rounded data ecosystem for this specific trader.`;
+Select readers that create a well-rounded data ecosystem for this specific trader.`;
 
   try {
     const response = await client.chatWithTools(userPrompt, systemPrompt, tools);

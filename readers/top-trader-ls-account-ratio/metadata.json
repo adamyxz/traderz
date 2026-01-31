@@ -1,6 +1,10 @@
 {
   "name": "top-trader-ls-account-ratio",
   "description": "获取大户账户数多空比数据。大户指保证金余额排名前20%的用户，数据包含大户多空账户数比值、多仓账户数比例、空仓账户数比例",
+  "standardParameters": {
+    "symbol": "symbol",
+    "interval": "period"
+  },
   "parameters": [
     {
       "name": "symbol",

@@ -34,8 +34,6 @@ readers/
     fmt: 'csv',         // 格式标识，固定为 'csv'
     bT: number,         // base timestamp (基准时间戳，用于相对时间)
     d: string,          // CSV 数据字符串
-    cnt: number,        // 数据条数
-    fa: string,         // fetched at (ISO 8601 格式时间戳)
     // ... 其他业务特定字段
   },
   metadata: {
@@ -45,6 +43,11 @@ readers/
   },
 }
 ```
+
+**注意**：
+
+- 不包含 `cnt`（数据条数）- CSV 本身可以统计，避免冗余
+- 不包含 `fa`（获取时间）- 对 LLM 决策无帮助，避免浪费 token
 
 ### CSV 数据格式
 
@@ -153,7 +156,68 @@ const data = omitDefaultValues(records, { M: false });
 // 移除所有 M: false 的字段，仅保留 M: true 的记录
 ```
 
+### 6. 移除时间戳列（超紧凑CSV）
+
+**对于时序数据，LLM分析时不需要具体时间戳**，行序已经隐含了时间顺序：
+
+```csv
+# 优化前（包含时间戳列）
+dT,r,b,s
+0,0.9271,0,0
+86400000,1.1146,0,0
+172800000,0.8905,0,0
+
+# 优化后（完全移除时间戳）
+r,b,s
+0.9271,0,0
+1.1146,0,0
+0.8905,0,0
+```
+
+使用 `toCompactCSV` 函数：
+
+```typescript
+import { toCompactCSV } from '@/lib/toon';
+
+// 完全移除时间戳列，行序隐含时间顺序
+const csvData = toCompactCSV(optimizedData, {
+  excludeColumns: ['dT', 'dot'], // 要排除的列
+  defaultValuePlaceholder: '', // 0值用空字符串表示
+});
+```
+
+**优势**：
+
+- 节省 20-30% token（每行少一列）
+- LLM更关注数值趋势而非时间戳
+- 可通过 `bT` (base timestamp) 和行号恢复原始时间
+
+**注意事项**：
+
+- 如果数据中包含 `s` (symbol) 列，也应该排除，因为交易对已在返回值的 `s` 字段中
+- 示例：`excludeColumns: ['dT', 's']`
+
 ## 综合优化函数
+
+### toCompactCSV
+
+生成超紧凑CSV，适用于时序数据：
+
+```typescript
+import { toCompactCSV } from '@/lib/toon';
+
+// 移除时间戳列，0值用空字符串表示
+const csvData = toCompactCSV(records, {
+  excludeColumns: ['dT', 'dot'], // 排除时间戳列
+  defaultValuePlaceholder: '', // 0值用空字符串
+});
+```
+
+**适用场景**：
+
+- LLM分析时不需要具体时间戳的时序数据
+- 行序已经隐含时间顺序
+- 追求最小token消耗
 
 ### optimizeTradeData
 
@@ -193,6 +257,10 @@ const { baseTime, data } = optimizeKlineData(klines, {
 {
   "name": "your-reader-name",
   "description": "Reader 功能描述",
+  "standardParameters": {
+    "symbol": "symbol",
+    "interval": "period"
+  },
   "parameters": [
     {
       "name": "symbol",
@@ -219,6 +287,38 @@ const { baseTime, data } = optimizeKlineData(klines, {
   ]
 }
 ```
+
+### standardParameters 字段说明
+
+`standardParameters` 用于声明 reader 需要哪些由 executor 自动注入的标准参数。这样可以确保：
+
+1. **避免参数名不匹配** - executor 会自动将标准值映射到 reader 期望的参数名
+2. **防止默认值覆盖** - 不会用数据库中的默认值覆盖 executor 传入的值
+3. **自文档化** - 清晰表明 reader 依赖哪些标准参数
+
+**支持的映射**：
+
+| 标准参数类型 | 说明                 | 示例目标参数名       |
+| ------------ | -------------------- | -------------------- |
+| `symbol`     | 交易对（如 BNBUSDT） | `symbol`             |
+| `interval`   | K线周期（如 30m）    | `interval`, `period` |
+
+**使用示例**：
+
+```json
+{
+  "standardParameters": {
+    "symbol": "symbol", // executor 的 symbol 值注入到 symbol 参数
+    "interval": "period" // executor 的 interval 值注入到 period 参数
+  }
+}
+```
+
+**注意事项**：
+
+- 如果 reader 不需要标准参数（如 `funding-rate` 可选传入 symbol），则不需要声明
+- 声明后，executor 会**自动注入**这些参数，无需在 `parameters` 中设置 `defaultValue`
+- `parameters` 数组中的定义仍然需要，用于前端表单生成和验证
 
 ### 参数类型说明
 
@@ -315,8 +415,6 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
         fmt: 'csv',
         bT: baseTime,
         d: csvData,
-        cnt: data.length,
-        fa: new Date().toISOString(),
       },
       metadata: {
         executionTime: Date.now() - startTime,
@@ -399,12 +497,15 @@ if (!response.ok) {
 | close        | c      | 收盘价       |
 | volume       | v      | 成交量       |
 | isBuyerMaker | m      | 是否买方挂单 |
-| count        | cnt    | 计数         |
 | interval     | i      | 周期         |
 | delta        | d      | 差值/增量    |
 | base         | b      | 基准值       |
-| fetchedAt    | fa     | 获取时间     |
 | format       | fmt    | 格式         |
+
+**已废弃的短属性名**（不再使用，避免冗余）：
+
+- `cnt` - 数据条数（CSV 可统计）
+- `fa` - 获取时间（对 LLM 无意义）
 
 ## 执行上下文 (ReaderContext)
 
@@ -449,6 +550,18 @@ interface ReaderOutput<T = unknown> {
 - 对于大量数据（100+ 条记录），效果更明显
 - CSV 格式化开销可忽略不计
 - 主要节省在 LLM API 调用成本
+
+## 已优化的冗余字段
+
+以下字段已从所有 Reader 中移除，以减少 token 消耗：
+
+| 字段                        | 原因                             |
+| --------------------------- | -------------------------------- |
+| `fa` (fetchedAt)            | ISO 8601 时间戳对 LLM 决策无帮助 |
+| `cnt` (count)               | CSV 数据本身可以统计条数         |
+| `T`, `E` (order-book)       | 订单簿快照数据不需要绝对时间戳   |
+| `lastUpdateId` (order-book) | 对交易决策无意义                 |
+| `bidsCount`, `asksCount`    | CSV 数据可以统计                 |
 
 ## 完整示例
 

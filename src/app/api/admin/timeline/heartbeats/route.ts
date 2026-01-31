@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const scheduler = getTimelineScheduler();
+    const scheduler = await getTimelineScheduler();
     const isActive = scheduler.isActive();
     console.log('[TimelineHeartbeatsAPI] Scheduler active:', isActive);
 

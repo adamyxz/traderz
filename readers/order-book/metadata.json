@@ -1,6 +1,9 @@
 {
   "name": "order-book",
   "description": "从币安永续合约获取订单簿深度数据，返回指定交易对的买单(bids)和卖单(asks)深度信息",
+  "standardParameters": {
+    "symbol": "symbol"
+  },
   "parameters": [
     {
       "name": "symbol",
@@ -23,5 +26,6 @@
         "enum": [5, 10, 20, 50, 100, 500, 1000]
       }
     }
-  ]
+  ],
+  "mandatory": false
 }

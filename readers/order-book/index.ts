@@ -1,5 +1,5 @@
 import { ReaderModule, ReaderInput, ReaderOutput, ReaderContext } from '@/lib/readers/types';
-import { trimPrice, smartRoundPrice } from '@/lib/toon';
+import { trimPrice } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
@@ -45,10 +45,9 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
 
     // 构建币安永续合约API请求
     const baseUrl = 'https://fapi.binance.com/fapi/v1/depth';
-    const params = new URLSearchParams({
-      symbol: symbol.toUpperCase(),
-      limit,
-    });
+    const params = new URLSearchParams();
+    params.append('symbol', symbol.toUpperCase());
+    params.append('limit', limit.toString());
 
     const url = `${baseUrl}?${params.toString()}`;
 
@@ -70,13 +69,13 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
     // 解析并优化订单簿数据
     // 买单 (bids) - 按价格降序排列
     const bids: PriceLevel[] = rawData.bids.map(([price, quantity]) => ({
-      p: smartRoundPrice(price, symbol),
+      p: trimPrice(price),
       q: trimPrice(quantity),
     }));
 
     // 卖单 (asks) - 按价格升序排列
     const asks: PriceLevel[] = rawData.asks.map(([price, quantity]) => ({
-      p: smartRoundPrice(price, symbol),
+      p: trimPrice(price),
       q: trimPrice(quantity),
     }));
 
@@ -102,13 +101,7 @@ async function execute(input: ReaderInput, _context: ReaderContext): Promise<Rea
       data: {
         s: symbol,
         fmt: 'csv',
-        lastUpdateId: rawData.lastUpdateId,
-        T: rawData.T, // 撮合引擎时间
-        E: rawData.E, // 事件时间
         d: csvData,
-        bidsCount: bids.length,
-        asksCount: asks.length,
-        fa: new Date().toISOString(),
       },
       metadata: {
         executionTime: Date.now() - startTime,

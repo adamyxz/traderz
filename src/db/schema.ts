@@ -166,6 +166,7 @@ export const readers = pgTable('readers', {
 
   // 执行配置
   timeout: integer('timeout').default(30000),
+  mandatory: boolean('mandatory').default(false).notNull(), // 是否强制，强制reader会在心跳时自动使用
 });
 
 export type Reader = typeof readers.$inferSelect;

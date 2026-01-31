@@ -1,5 +1,5 @@
 import { ReaderModule, ReaderInput, ReaderOutput } from '@/lib/readers/types';
-import { toRelativeTimestamps, trimPrice } from '@/lib/toon';
+import { toRelativeTimestamps, trimPrice, toCompactCSV } from '@/lib/toon';
 import metadataJson from './metadata.json';
 import { z } from 'zod';
 
@@ -101,13 +101,11 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
       throw new Error('数据优化失败');
     }
 
-    // 构建CSV
-    const keys = optimizedData.length > 0 ? Object.keys(optimizedData[0]) : ['dT', 'r', 'l', 's'];
-    const csvHeader = keys.join(',');
-    const csvRows = optimizedData.map((row: Record<string, unknown>) => {
-      return keys.map((k) => row[k]).join(',');
+    // 构建超紧凑CSV - 移除时间戳列, 行序隐含时间顺序
+    const csvData = toCompactCSV(optimizedData, {
+      excludeColumns: ['dT'], // 移除相对时间戳
+      defaultValuePlaceholder: '', // 0值用空字符串表示
     });
-    const csvData = `${csvHeader}\n${csvRows.join('\n')}`;
 
     const result = {
       s: symbol,
@@ -115,8 +113,6 @@ async function execute(input: ReaderInput): Promise<ReaderOutput> {
       fmt: 'csv',
       bT: baseTime,
       d: csvData,
-      cnt: data.length,
-      fa: new Date().toISOString(),
     };
 
     return {
