@@ -10,12 +10,61 @@ import {
 } from 'lightweight-charts';
 import type { CandlestickData, Time, IChartApi, ISeriesApi } from 'lightweight-charts';
 import type { KlineData, ConnectionStatus, ChartPositionData } from '@/lib/trading/types';
+import { SCHEDULER_CONFIG } from '@/lib/timeline/constants';
 
-// Price line with associated position data
-interface PositionPriceLine {
-  line: ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
-  position: ChartPositionData;
-  currentPnl: number;
+// Extract colors from SCHEDULER_CONFIG
+const TRADER_COLORS = SCHEDULER_CONFIG.defaultColors;
+
+// Price line with associated position data (not currently used but kept for reference)
+// interface PositionPriceLine {
+//   line: ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>;
+//   position: ChartPositionData;
+//   currentPnl: number;
+// }
+
+// Get trader color from TRADER_COLORS based on trader ID (same logic as timeline)
+function getTraderColor(traderId: number): string {
+  return TRADER_COLORS[traderId % TRADER_COLORS.length];
+}
+
+// Convert hex to HSL and return variants for entry, profit, stop lines
+function getColorVariants(hexColor: string) {
+  // Convert hex to RGB
+  const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+  const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+  const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+
+  // Convert RGB to HSL
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        break;
+      case g:
+        h = ((b - r) / d + 2) / 6;
+        break;
+      case b:
+        h = ((r - g) / d + 4) / 6;
+        break;
+    }
+  }
+
+  const hue = h * 360;
+  const sat = s * 100;
+
+  return {
+    entry: hexColor, // Original color for entry line (thicker)
+    profit: `hsl(${hue}, ${sat * 0.6}%, 75%)`, // Lighter for take profit (thinner)
+    stop: `hsl(${hue}, ${sat * 0.6}%, 70%)`, // Slightly darker for stop loss (thinner)
+  };
 }
 
 interface ExtendedWebSocket extends WebSocket {
@@ -93,6 +142,7 @@ export default function TradingChart({
 
     const container = chartContainerRef.current;
     const initialWidth = container.clientWidth || 800;
+    const initialHeight = container.clientHeight || 400;
 
     const chart = createChart(container, {
       layout: {
@@ -104,10 +154,15 @@ export default function TradingChart({
         horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
       },
       width: initialWidth,
-      height: 700, // Increased height to accommodate volume chart
+      height: initialHeight,
+      rightPriceScale: {
+        borderColor: 'rgba(42, 46, 57, 0.5)',
+      },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: 'rgba(42, 46, 57, 0.5)',
+        rightOffset: 10, // Add space on right for price labels
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -133,10 +188,10 @@ export default function TradingChart({
       priceScaleId: 'volume',
     });
 
-    // Set volume scale to bottom
+    // Set volume scale to bottom (adjust margins to prevent overlapping with candlesticks)
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.8,
+        top: 0.85, // Volume chart takes bottom 15%
         bottom: 0,
       },
     });
@@ -151,10 +206,12 @@ export default function TradingChart({
 
       const entry = entries[0];
       const newWidth = entry.contentRect.width;
+      const newHeight = entry.contentRect.height;
 
-      if (newWidth > 0) {
+      if (newWidth > 0 && newHeight > 0) {
         chartRef.current.applyOptions({
           width: newWidth,
+          height: newHeight,
         });
       }
     });
@@ -164,28 +221,49 @@ export default function TradingChart({
     const handleWindowResize = () => {
       if (container && chartRef.current) {
         const width = container.clientWidth;
-        if (width > 0) {
-          chartRef.current.applyOptions({ width });
+        const height = container.clientHeight;
+        if (width > 0 && height > 0) {
+          chartRef.current.applyOptions({ width, height });
         }
       }
     };
 
     window.addEventListener('resize', handleWindowResize);
 
+    // Initial resize with multiple attempts to ensure proper sizing
     const initialResizeTimeout = setTimeout(() => {
       if (container && chartRef.current) {
         const width = container.clientWidth;
-        if (width > 0) {
-          chartRef.current.applyOptions({ width });
+        const height = container.clientHeight;
+        if (width > 0 && height > 0) {
+          chartRef.current.applyOptions({ width, height });
+          chartRef.current.timeScale().fitContent();
         }
       }
     }, 100);
+
+    // Second resize to catch any layout shifts
+    const secondResizeTimeout = setTimeout(() => {
+      if (container && chartRef.current) {
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        if (width > 0 && height > 0) {
+          chartRef.current.applyOptions({ width, height });
+        }
+      }
+    }, 500);
 
     return () => {
       window.removeEventListener('resize', handleWindowResize);
       resizeObserver.disconnect();
       clearTimeout(initialResizeTimeout);
-      chart.remove();
+      clearTimeout(secondResizeTimeout);
+
+      // Use requestAnimationFrame to avoid the "Object is disposed" error
+      // by allowing lightweight-charts to finish any pending renders
+      requestAnimationFrame(() => {
+        chart.remove();
+      });
     };
   }, []);
 
@@ -415,7 +493,7 @@ export default function TradingChart({
     const newLinesMap = new Map();
 
     // Remove old lines
-    for (const [positionId, lines] of positionLinesRef.current) {
+    for (const [_positionId, lines] of positionLinesRef.current) {
       series.removePriceLine(lines.entryLine);
       if (lines.stopLossLine) series.removePriceLine(lines.stopLossLine);
       if (lines.takeProfitLine) series.removePriceLine(lines.takeProfitLine);
@@ -424,39 +502,49 @@ export default function TradingChart({
 
     // Create new lines for each position
     for (const position of positions) {
-      // Entry line (blue, solid)
+      // Calculate initial PnL for display
+      const initialPnl = currentPrice
+        ? (position.side === 'long'
+            ? (currentPrice - position.entryPrice) / position.entryPrice
+            : (position.entryPrice - currentPrice) / position.entryPrice) * 100
+        : 0;
+
+      // Get color variants based on trader ID (consistent with timeline)
+      const traderColor = getTraderColor(position.traderId);
+      const { entry, profit, stop } = getColorVariants(traderColor);
+
+      // Entry line - shows P&L and percentage (thicker line)
+      const pnlText = initialPnl >= 0 ? `+${initialPnl.toFixed(1)}%` : `${initialPnl.toFixed(1)}%`;
       const entryLine = series.createPriceLine({
         price: position.entryPrice,
-        color: '#3b82f6',
-        lineWidth: 2,
+        color: entry,
+        lineWidth: 3, // Thicker for entry line
         lineStyle: 2, // Solid
         axisLabelVisible: true,
-        title: `${position.traderName} Entry`,
+        title: pnlText,
       });
 
-      // Stop loss line (red, dashed)
+      // Stop loss line (thinner, dotted) - no label
       let stopLossLine = null;
       if (position.stopLossPrice) {
         stopLossLine = series.createPriceLine({
           price: position.stopLossPrice,
-          color: '#ef4444',
-          lineWidth: 2,
-          lineStyle: 3, // Dashed
-          axisLabelVisible: true,
-          title: `${position.traderName} Stop`,
+          color: stop,
+          lineWidth: 1, // Thinner
+          lineStyle: 1, // Dotted (·····)
+          axisLabelVisible: false,
         });
       }
 
-      // Take profit line (green, dashed)
+      // Take profit line (thinner, dashed) - no label
       let takeProfitLine = null;
       if (position.takeProfitPrice) {
         takeProfitLine = series.createPriceLine({
           price: position.takeProfitPrice,
-          color: '#22c55e',
-          lineWidth: 2,
-          lineStyle: 3, // Dashed
-          axisLabelVisible: true,
-          title: `${position.traderName} Profit`,
+          color: profit,
+          lineWidth: 1, // Thinner
+          lineStyle: 2, // Dashed (-~-~-~)
+          axisLabelVisible: false,
         });
       }
 
@@ -464,6 +552,9 @@ export default function TradingChart({
         entryLine,
         stopLossLine,
         takeProfitLine,
+        traderName: position.traderName, // Store for hover tooltip
+        side: position.side,
+        entryPrice: position.entryPrice,
       });
     }
 
@@ -478,99 +569,128 @@ export default function TradingChart({
       }
       positionLinesRef.current.clear();
     };
-  }, [positions]);
+  }, [positions, currentPrice]);
+
+  // Update entry line titles with P&L when price changes
+  useEffect(() => {
+    if (!currentPrice || !chartRef.current) return;
+
+    for (const [_positionId, lines] of positionLinesRef.current) {
+      const pnl =
+        lines.side === 'long'
+          ? (currentPrice - lines.entryPrice) / lines.entryPrice
+          : (lines.entryPrice - currentPrice) / lines.entryPrice;
+
+      const pnlText = pnl >= 0 ? `+${(pnl * 100).toFixed(1)}%` : `${(pnl * 100).toFixed(1)}%`;
+      lines.entryLine.applyOptions({ title: pnlText });
+    }
+  }, [currentPrice]);
+
+  // Add crosshair move event to show trader name on hover
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    const chart = chartRef.current;
+
+    const handleCrosshairMove = (param: { time?: unknown; seriesData: Map<unknown, unknown> }) => {
+      if (!param || !param.time || positionLinesRef.current.size === 0) {
+        // Reset all titles when crosshair leaves chart
+        for (const lines of positionLinesRef.current.values()) {
+          if (currentPrice) {
+            const pnl =
+              lines.side === 'long'
+                ? (currentPrice - lines.entryPrice) / lines.entryPrice
+                : (lines.entryPrice - currentPrice) / lines.entryPrice;
+
+            const pnlText = pnl >= 0 ? `+${(pnl * 100).toFixed(1)}%` : `${(pnl * 100).toFixed(1)}%`;
+            lines.entryLine.applyOptions({ title: pnlText });
+          }
+        }
+        return;
+      }
+
+      // Get price from crosshair
+      const seriesData = param.seriesData.get(candlestickSeriesRef.current);
+      if (!seriesData) return;
+
+      const price = (seriesData as { value?: number }).value;
+      if (!price) return;
+
+      // Check if crosshair is near any entry line (within 0.5% of price range)
+      for (const lines of positionLinesRef.current.values()) {
+        const priceRangePercent = (Math.abs(price - lines.entryPrice) / lines.entryPrice) * 100;
+        const threshold = 0.5; // 0.5% threshold
+
+        if (priceRangePercent < threshold) {
+          // Show trader name when hovering near entry line
+          lines.entryLine.applyOptions({
+            title: `${lines.traderName} (${lines.entryPrice.toFixed(2)})`,
+          });
+        } else {
+          // Reset to P&L when not hovering
+          if (currentPrice) {
+            const pnl =
+              lines.side === 'long'
+                ? (currentPrice - lines.entryPrice) / lines.entryPrice
+                : (lines.entryPrice - currentPrice) / lines.entryPrice;
+
+            const pnlText = pnl >= 0 ? `+${(pnl * 100).toFixed(1)}%` : `${(pnl * 100).toFixed(1)}%`;
+            lines.entryLine.applyOptions({ title: pnlText });
+          }
+        }
+      }
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshairMove);
+
+    return () => {
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
+    };
+  }, [currentPrice]);
 
   return (
-    <div className="relative">
-      {/* Market Data Panel */}
-      <div className="absolute left-4 top-4 z-10 flex gap-4 rounded-lg bg-gray-900/95 border border-gray-700/50 px-4 py-2 text-xs">
+    <div className="relative h-full w-full box-border">
+      {/* Chart container - positioned absolutely to fill entire parent */}
+      <div
+        ref={chartContainerRef}
+        className="absolute inset-0 rounded-lg border border-gray-700/50"
+      />
+
+      {/* Market Data Panel - adjusted positioning */}
+      <div className="absolute left-2 top-2 z-10 flex gap-1 md:gap-2 rounded-lg bg-gray-900/95 border border-gray-700/50 px-1.5 py-1 md:px-3 md:py-1.5 text-[9px] md:text-[10px]">
         <div className="flex flex-col">
           <span className="text-gray-400">Trades</span>
-          <span className="text-lg font-semibold text-white">
+          <span className="text-xs md:text-sm font-semibold text-white">
             {marketData.trades.toLocaleString()}
           </span>
         </div>
         <div className="w-px bg-gray-700" />
         <div className="flex flex-col">
-          <span className="text-gray-400">Buy Volume</span>
-          <span className="text-lg font-semibold text-emerald-400">
-            {marketData.takerBuyVolume.toFixed(4)}
+          <span className="text-gray-400">Buy Vol</span>
+          <span className="text-xs md:text-sm font-semibold text-emerald-400">
+            {marketData.takerBuyVolume.toFixed(0)}
           </span>
         </div>
-        <div className="w-px bg-gray-700" />
-        <div className="flex flex-col">
+        <div className="w-px bg-gray-700 hidden sm:block" />
+        <div className="flex flex-col hidden sm:flex">
           <span className="text-gray-400">Buy Ratio</span>
           <span
-            className={`text-lg font-semibold ${
+            className={`text-xs md:text-sm font-semibold ${
               marketData.takerBuyRatio >= 0.5 ? 'text-emerald-400' : 'text-red-400'
             }`}
           >
-            {(marketData.takerBuyRatio * 100).toFixed(1)}%
+            {(marketData.takerBuyRatio * 100).toFixed(0)}%
           </span>
         </div>
       </div>
 
-      {/* Position Info Panels (one per position) */}
-      {positions.length > 0 && (
-        <div className="absolute right-4 top-4 z-10 flex flex-col gap-2">
-          {positions.map((position) => {
-            // Calculate real-time PnL
-            const realtimePnl = currentPrice
-              ? (position.side === 'long'
-                  ? (currentPrice - position.entryPrice) / position.entryPrice
-                  : (position.entryPrice - currentPrice) / position.entryPrice) * 100
-              : 0;
-
-            return (
-              <div
-                key={position.positionId}
-                className="rounded-lg bg-gray-900/95 border border-gray-700/50 px-3 py-2 text-xs"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex flex-col">
-                    <span className="text-gray-400">{position.traderName}</span>
-                    <span className="text-sm font-semibold text-white">
-                      {position.side === 'long' ? 'Long' : 'Short'}
-                    </span>
-                  </div>
-                  <div className="w-px bg-gray-700" />
-                  <div className="flex flex-col">
-                    <span className="text-gray-400">Entry Price</span>
-                    <span className="text-sm font-semibold text-blue-400">
-                      {position.entryPrice.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="w-px bg-gray-700" />
-                  <div className="flex flex-col">
-                    <span className="text-gray-400">P&L</span>
-                    <span
-                      className={`text-sm font-semibold ${
-                        realtimePnl >= 0 ? 'text-emerald-400' : 'text-red-400'
-                      }`}
-                    >
-                      {realtimePnl >= 0 ? '+' : ''}
-                      {realtimePnl.toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="w-px bg-gray-700" />
-                  <div className="flex flex-col">
-                    <span className="text-gray-400">Position</span>
-                    <span className="text-sm font-semibold text-sky-400">
-                      {position.positionSize.toFixed(0)} USDT
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Position Info Panels removed - info now shown on chart lines */}
 
       {/* Loading indicator */}
       {isLoading && !wsError && (
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
-          <div className="flex items-center gap-2 rounded-lg bg-gray-800/90 px-4 py-2 text-white">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+          <div className="flex items-center gap-2 rounded-lg bg-gray-800/90 px-3 py-1.5 md:px-4 md:py-2 text-xs md:text-sm text-white">
+            <div className="h-3 w-3 md:h-4 md:w-4 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
             <span>Loading...</span>
           </div>
         </div>
@@ -578,13 +698,13 @@ export default function TradingChart({
 
       {/* Error display */}
       {(error || wsError) && !isLoading && (
-        <div className="absolute left-1/2 top-1/2 z-10 flex w-full max-w-lg -translate-x-1/2 -translate-y-1/2">
-          <div className="w-full rounded-lg bg-red-500/10 border border-red-500/50 p-6 text-center">
-            <p className="mb-2 text-lg font-semibold text-red-400">
+        <div className="absolute left-1/2 top-1/2 z-10 flex w-11/12 max-w-lg -translate-x-1/2 -translate-y-1/2">
+          <div className="w-full rounded-lg bg-red-500/10 border border-red-500/50 p-3 md:p-6 text-center">
+            <p className="mb-2 text-sm md:text-lg font-semibold text-red-400">
               {wsError ? 'WebSocket Connection Failed' : 'Data Loading Failed'}
             </p>
-            <p className="text-sm text-gray-300">{wsError || error}</p>
-            <p className="mt-4 text-xs text-gray-400">
+            <p className="text-xs md:text-sm text-gray-300">{wsError || error}</p>
+            <p className="mt-3 md:mt-4 text-[10px] md:text-xs text-gray-400">
               {wsError
                 ? 'Tip: WebSocket connection failed. Please ensure Clash is in global mode, or check your network connection.'
                 : 'Tip: Binance API may be restricted in some regions. Please try using a VPN or proxy server.'}
@@ -592,9 +712,6 @@ export default function TradingChart({
           </div>
         </div>
       )}
-
-      {/* Chart container */}
-      <div ref={chartContainerRef} className="rounded-lg border border-gray-700/50" />
     </div>
   );
 }

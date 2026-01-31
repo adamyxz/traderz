@@ -225,7 +225,7 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
           heartbeat,
           trader,
           x: Math.max(0, Math.min(100, positionPercent)),
-          y: trader.index * 40 + 20, // 40px row height + 20px padding
+          y: trader.index * 28 + 16, // 28px row height + 16px padding
         };
       })
       .filter((p): p is NonNullable<typeof p> => p !== null);
@@ -246,26 +246,33 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
 
   return (
     <div
-      className="relative w-full overflow-visible rounded-2xl"
+      className="relative w-full overflow-hidden rounded-2xl shadow-2xl"
       style={{
-        backgroundColor: '#252525',
-        height: `${Math.max(160, traders.length * 40 + 40)}px`,
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%)',
+        height: `${Math.max(120, traders.length * 28 + 32)}px`,
+        border: '1px solid rgba(99, 102, 241, 0.2)',
+        boxShadow: '0 0 40px rgba(99, 102, 241, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
       }}
     >
       {/* Trader row backgrounds */}
       {traders.map((trader) => (
         <div
           key={trader.index}
-          className="absolute left-0 right-0 border-b border-gray-700/30"
+          className="absolute left-0 right-0"
           style={{
-            top: `${trader.index * 40 + 20}px`,
-            height: '40px',
+            top: `${trader.index * 28 + 16}px`,
+            height: '28px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+            background: trader.index % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)',
           }}
         >
           {/* Trader label */}
           <div
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-medium truncate max-w-[120px]"
-            style={{ color: trader.color }}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium truncate max-w-[120px]"
+            style={{
+              color: trader.color,
+              textShadow: `0 0 10px ${trader.color}40`,
+            }}
           >
             {trader.name}
           </div>
@@ -274,8 +281,14 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
 
       {/* Center line */}
       <div
-        className="absolute top-0 bottom-0 left-1/2 w-px bg-sky-500/50"
-        style={{ transform: 'translateX(-50%)' }}
+        className="absolute top-0 bottom-0 left-1/2"
+        style={{
+          width: '2px',
+          background:
+            'linear-gradient(180deg, transparent 0%, #38bdf8 15%, #38bdf8 85%, transparent 100%)',
+          transform: 'translateX(-50%)',
+          boxShadow: '0 0 10px #38bdf860, 0 0 20px #38bdf840',
+        }}
       />
 
       {/* Heartbeat nodes - using div with absolute positioning */}
@@ -342,13 +355,25 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-2 right-2 flex items-center gap-4 text-xs text-gray-400 bg-gray-900/80 rounded-lg px-3 py-2">
+      <div
+        className="absolute bottom-2 right-2 flex items-center gap-4 text-xs rounded-xl px-4 py-2"
+        style={{
+          color: 'rgba(255, 255, 255, 0.6)',
+          background: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+        }}
+      >
         <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded-full border-2 border-gray-500 bg-transparent" />
           <span>Pending</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-full bg-blue-500" />
+          <div
+            className="w-3 h-3 rounded-full bg-blue-500"
+            style={{ boxShadow: '0 0 8px #3B82F6' }}
+          />
           <span>Executing</span>
         </div>
         <div className="flex items-center gap-1">
@@ -359,13 +384,26 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
           <div className="w-3 h-3 rounded-full border-2 border-red-500 bg-transparent" />
           <span>Failed</span>
         </div>
-        <div className="w-px h-4 bg-gray-600 mx-2" />
+        <div
+          style={{
+            width: '1px',
+            height: '16px',
+            background: 'rgba(255, 255, 255, 0.15)',
+            margin: '0 4px',
+          }}
+        />
         <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-full bg-green-500" />
+          <div
+            className="w-3 h-3 rounded-full bg-green-500"
+            style={{ boxShadow: '0 0 8px #22C55E' }}
+          />
           <span>Long</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-full bg-red-500" />
+          <div
+            className="w-3 h-3 rounded-full bg-red-500"
+            style={{ boxShadow: '0 0 8px #EF4444' }}
+          />
           <span>Short</span>
         </div>
         <div className="flex items-center gap-1">
@@ -373,7 +411,10 @@ export function HeartbeatNodesLayer({ heartbeats, currentTime }: HeartbeatNodesL
           <span>Hold</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-full bg-yellow-500" />
+          <div
+            className="w-3 h-3 rounded-full bg-yellow-500"
+            style={{ boxShadow: '0 0 8px #EAB308' }}
+          />
           <span>Close</span>
         </div>
       </div>

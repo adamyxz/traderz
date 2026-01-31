@@ -16,9 +16,14 @@ import { TIMELINE_RANGE_HOURS } from '@/lib/timeline/constants';
 interface TimelineVisualizationProps {
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
+  readonly?: boolean;
 }
 
-export function TimelineVisualization({ enabled, onToggle }: TimelineVisualizationProps) {
+export function TimelineVisualization({
+  enabled,
+  onToggle,
+  readonly = false,
+}: TimelineVisualizationProps) {
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [heartbeats, setHeartbeats] = useState<TimelineHeartbeat[]>([]);
   const [activeTraderCount, setActiveTraderCount] = useState<number>(0);
@@ -144,23 +149,22 @@ export function TimelineVisualization({ enabled, onToggle }: TimelineVisualizati
   const handleToggle = useCallback(
     async (newEnabled: boolean) => {
       try {
-        const response = await fetch('/api/admin/timeline/config', {
+        const response = await fetch('/api/admin/system-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabled: newEnabled }),
+          body: JSON.stringify({ systemEnabled: newEnabled }),
         });
 
-        if (!response.ok) throw new Error('Failed to update timeline config');
+        if (!response.ok) throw new Error('Failed to update system settings');
 
         const data = await response.json();
         if (data.success) {
-          onToggle(data.data.enabled);
-          setActiveTraderCount(data.data.activeTraderCount);
+          onToggle(newEnabled);
           // Reset fetch flag when toggling
           hasFetchedRef.current = false;
         }
       } catch (error) {
-        console.error('[TimelineVisualization] Error toggling timeline:', error);
+        console.error('[TimelineVisualization] Error toggling system:', error);
         throw error;
       }
     },
@@ -174,6 +178,7 @@ export function TimelineVisualization({ enabled, onToggle }: TimelineVisualizati
         enabled={enabled}
         onToggle={handleToggle}
         activeTraderCount={activeTraderCount}
+        readonly={readonly}
       />
     );
   }
@@ -185,23 +190,40 @@ export function TimelineVisualization({ enabled, onToggle }: TimelineVisualizati
         enabled={enabled}
         onToggle={handleToggle}
         activeTraderCount={activeTraderCount}
+        readonly={readonly}
       />
 
       {/* Status bar */}
-      <div className="flex items-center justify-between text-sm">
+      <div
+        className="flex items-center justify-between text-sm rounded-xl px-4 py-2.5"
+        style={{
+          background: 'rgba(15, 23, 42, 0.6)',
+          border: '1px solid rgba(99, 102, 241, 0.15)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
         <div className="flex items-center gap-4">
           {connected ? (
-            <div className="flex items-center gap-2 text-green-500">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span>Live</span>
+            <div className="flex items-center gap-2 text-green-400">
+              <div
+                className="w-2 h-2 rounded-full bg-green-500 animate-pulse"
+                style={{ boxShadow: '0 0 8px #22C55E' }}
+              />
+              <span style={{ fontWeight: '500' }}>Live</span>
             </div>
           ) : (
-            <span className="text-gray-400">Connecting...</span>
+            <span className="text-gray-500">Connecting...</span>
           )}
-          {error && <span className="text-red-500">{error}</span>}
-          {isLoading && <span className="text-gray-400">Loading...</span>}
+          {error && <span className="text-red-400">{error}</span>}
+          {isLoading && <span className="text-gray-500">Loading...</span>}
         </div>
-        <div className="text-gray-400">
+        <div
+          className="font-mono"
+          style={{
+            color: 'rgba(148, 163, 184, 0.8)',
+            textShadow: '0 0 10px rgba(148, 163, 184, 0.3)',
+          }}
+        >
           {currentTime.toLocaleTimeString('en-US', { hour12: false })} UTC
         </div>
       </div>

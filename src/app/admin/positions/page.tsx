@@ -76,6 +76,28 @@ export default function PositionsAdminPage() {
   // Track if component is mounted
   const isMounted = useRef(true);
 
+  // Position price auto-update setting
+  const [positionPriceAutoUpdate, setPositionPriceAutoUpdate] = useState(true);
+
+  // Fetch system settings for position price auto-update
+  useEffect(() => {
+    const fetchSystemSettings = async () => {
+      try {
+        const response = await fetch('/api/admin/system-settings');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setPositionPriceAutoUpdate(data.data.system_enabled?.value === 'true');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching system settings:', error);
+      }
+    };
+
+    fetchSystemSettings();
+  }, []);
+
   // Fetch positions and traders
   useEffect(() => {
     isMounted.current = true;
@@ -88,6 +110,10 @@ export default function PositionsAdminPage() {
 
   // Auto-refresh for price updates (incremental update, no flicker)
   useEffect(() => {
+    if (!positionPriceAutoUpdate) {
+      return;
+    }
+
     // Update prices every 3 seconds
     const intervalId = setInterval(async () => {
       try {
@@ -119,7 +145,7 @@ export default function PositionsAdminPage() {
     }, 3000); // 3 seconds
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [positionPriceAutoUpdate]);
 
   const fetchData = async () => {
     try {

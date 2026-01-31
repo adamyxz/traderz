@@ -78,15 +78,15 @@ export default function ChartCard({
       `}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-gray-700/50 bg-gray-800/50 px-3 py-2">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between border-b border-gray-700/50 bg-gray-800/50 px-2 py-1.5 md:px-3 md:py-2">
+        <div className="flex items-center gap-1.5 md:gap-3">
           {/* Trading Pair Selector */}
           <select
             value={config.symbol}
             onChange={(e) => handleSymbolChange(e.target.value)}
             disabled
             className="
-              rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white
+              rounded border border-gray-700 bg-gray-900 px-1.5 py-0.5 md:px-2 md:py-1 text-[10px] md:text-xs text-white
               focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50
             "
           >
@@ -103,7 +103,7 @@ export default function ChartCard({
             onChange={(e) => handleIntervalChange(e.target.value)}
             disabled
             className="
-              rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white
+              rounded border border-gray-700 bg-gray-900 px-1.5 py-0.5 md:px-2 md:py-1 text-[10px] md:text-xs text-white
               focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50
             "
           >
@@ -115,9 +115,9 @@ export default function ChartCard({
           </select>
 
           {/* Connection Status Indicator */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 md:gap-1.5">
             <div
-              className={`h-2 w-2 rounded-full ${
+              className={`h-1.5 w-1.5 md:h-2 md:w-2 rounded-full ${
                 config.connectionStatus === 'connected'
                   ? 'bg-emerald-500'
                   : config.connectionStatus === 'connecting'
@@ -125,7 +125,7 @@ export default function ChartCard({
                     : 'bg-gray-500'
               }`}
             />
-            <span className="text-xs text-gray-400">
+            <span className="text-[10px] md:text-xs text-gray-400 hidden sm:block">
               {config.connectionStatus === 'connected'
                 ? 'Connected'
                 : config.connectionStatus === 'connecting'
@@ -135,31 +135,31 @@ export default function ChartCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 md:gap-2">
           {/* Fullscreen Button */}
           <button
             onClick={handleFullscreen}
-            className="rounded p-1 text-gray-400 hover:text-white transition-colors"
+            className="rounded p-0.5 md:p-1 text-gray-400 hover:text-white transition-colors"
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
-            <Maximize2 className="h-4 w-4" />
+            <Maximize2 className="h-3 w-3 md:h-4 md:w-4" />
           </button>
 
           {/* Delete Button (hide when fullscreen) */}
           {!isFullscreen && (
             <button
               onClick={handleDelete}
-              className="rounded p-1 text-gray-400 hover:text-red-400 transition-colors"
+              className="rounded p-0.5 md:p-1 text-gray-400 hover:text-red-400 transition-colors"
               title="Delete"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3 w-3 md:h-4 md:w-4" />
             </button>
           )}
         </div>
       </div>
 
       {/* Chart Container */}
-      <div className="flex-1 min-h-[200px]">
+      <div className="flex-1 min-h-[300px] md:min-h-[350px] box-border overflow-hidden p-2">
         <TradingChart
           symbol={config.symbol}
           interval={config.interval}

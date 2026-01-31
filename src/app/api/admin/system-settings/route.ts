@@ -14,6 +14,7 @@ const SYSTEM_SETTING_KEYS = {
   MIN_KLINE_INTERVAL_SECONDS: 'min_kline_interval_seconds',
   MAX_INTERVALS_PER_TRADER: 'max_intervals_per_trader',
   MAX_OPTIONAL_READERS_PER_TRADER: 'max_optional_readers_per_trader',
+  SYSTEM_ENABLED: 'system_enabled',
 } as const;
 
 // Default values for system settings
@@ -32,6 +33,11 @@ const DEFAULT_SETTINGS = {
     value: '5',
     description:
       'Maximum number of optional (non-mandatory) readers that can be associated with a single trader. Mandatory readers are always included. Recommended: 2-5',
+  },
+  [SYSTEM_SETTING_KEYS.SYSTEM_ENABLED]: {
+    value: 'false',
+    description:
+      'Enable/disable system features (timeline visualization and position price auto-update)',
   },
 };
 
@@ -84,17 +90,22 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { minKlineIntervalSeconds, maxIntervalsPerTrader, maxOptionalReadersPerTrader } =
-      body as {
-        minKlineIntervalSeconds?: number | string;
-        maxIntervalsPerTrader?: number | string;
-        maxOptionalReadersPerTrader?: number | string;
-      };
+    const {
+      minKlineIntervalSeconds,
+      maxIntervalsPerTrader,
+      maxOptionalReadersPerTrader,
+      systemEnabled,
+    } = body as {
+      minKlineIntervalSeconds?: number | string;
+      maxIntervalsPerTrader?: number | string;
+      maxOptionalReadersPerTrader?: number | string;
+      systemEnabled?: boolean;
+    };
 
     // Helper function to update a setting
     const updateSetting = async (
       key: string,
-      value: number | string,
+      value: number | string | undefined,
       validator: (v: number) => boolean,
       errorMessage: string
     ) => {
@@ -110,6 +121,33 @@ export async function POST(request: NextRequest) {
           .where(eq(systemConfigurations.key, key));
 
         const valueStr = String(numValue);
+        const description = DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS].description;
+
+        if (existing.length > 0) {
+          await db
+            .update(systemConfigurations)
+            .set({ value: valueStr, description, updatedAt: new Date() })
+            .where(eq(systemConfigurations.key, key));
+        } else {
+          await db.insert(systemConfigurations).values({
+            key,
+            value: valueStr,
+            description,
+          });
+        }
+      }
+      return { success: true };
+    };
+
+    // Helper function to update a boolean setting
+    const updateBooleanSetting = async (key: string, value: boolean | undefined) => {
+      if (value !== undefined) {
+        const existing = await db
+          .select()
+          .from(systemConfigurations)
+          .where(eq(systemConfigurations.key, key));
+
+        const valueStr = String(value);
         const description = DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS].description;
 
         if (existing.length > 0) {
@@ -162,6 +200,16 @@ export async function POST(request: NextRequest) {
 
     if (!maxReadersResult.success) {
       return NextResponse.json(maxReadersResult, { status: 400 });
+    }
+
+    // Update system enabled
+    const systemResult = await updateBooleanSetting(
+      SYSTEM_SETTING_KEYS.SYSTEM_ENABLED,
+      systemEnabled
+    );
+
+    if (!systemResult.success) {
+      return NextResponse.json(systemResult, { status: 400 });
     }
 
     return NextResponse.json({

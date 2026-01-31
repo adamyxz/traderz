@@ -23,14 +23,7 @@ export default function AdminSidebar() {
       {/* Logo */}
       <div className="flex h-20 items-center justify-center border-b border-gray-700/30">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-orange-500">
-          <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-            />
-          </svg>
+          <span className="text-2xl font-bold text-white">Z</span>
         </div>
       </div>
 

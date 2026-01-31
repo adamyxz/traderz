@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import AdminSidebar from '@/components/admin-sidebar';
 import AdminHeader from '@/components/admin-header';
-import { Settings, Save, Clock, Layers, Database } from 'lucide-react';
+import { Settings, Save, Clock, Layers, Database, Power } from 'lucide-react';
 
 interface SystemSettings {
   min_kline_interval_seconds: {
@@ -15,6 +15,10 @@ interface SystemSettings {
     description: string | null;
   };
   max_optional_readers_per_trader: {
+    value: string;
+    description: string | null;
+  };
+  system_enabled: {
     value: string;
     description: string | null;
   };
@@ -30,12 +34,13 @@ const INTERVAL_PRESETS = [
 ];
 
 export default function SystemSettingsPage() {
-  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [_settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [minIntervalSeconds, setMinIntervalSeconds] = useState<number>(900);
   const [maxIntervalsPerTrader, setMaxIntervalsPerTrader] = useState<number>(4);
   const [maxOptionalReadersPerTrader, setMaxOptionalReadersPerTrader] = useState<number>(5);
+  const [systemEnabled, setSystemEnabled] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -56,6 +61,7 @@ export default function SystemSettingsPage() {
       setMinIntervalSeconds(Number(data.data.min_kline_interval_seconds.value));
       setMaxIntervalsPerTrader(Number(data.data.max_intervals_per_trader.value));
       setMaxOptionalReadersPerTrader(Number(data.data.max_optional_readers_per_trader.value));
+      setSystemEnabled(data.data.system_enabled?.value === 'true');
     } catch (error) {
       console.error('Error fetching settings:', error);
       showSaveMessage('error', 'Failed to load system settings');
@@ -76,6 +82,7 @@ export default function SystemSettingsPage() {
           minKlineIntervalSeconds: minIntervalSeconds,
           maxIntervalsPerTrader,
           maxOptionalReadersPerTrader,
+          systemEnabled,
         }),
       });
 
@@ -150,6 +157,28 @@ export default function SystemSettingsPage() {
 
           {/* Settings Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* System On/Off */}
+            <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Power
+                  className={`h-4 w-4 ${systemEnabled ? 'text-green-400' : 'text-gray-400'}`}
+                />
+                <h2 className="text-sm font-semibold text-white">System</h2>
+              </div>
+              <div className="mb-3 text-2xl font-bold text-white">
+                {systemEnabled ? 'ON' : 'OFF'}
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  checked={systemEnabled}
+                  onChange={(e) => setSystemEnabled(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-600 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-green-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-800"></div>
+              </label>
+            </div>
+
             {/* Minimum Kline Interval */}
             <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
               <div className="mb-3 flex items-center gap-2">

@@ -143,11 +143,8 @@ export default function MultiChartContainer({
   }, [autoUpdateEnabled, fetchAutoCharts]);
 
   const getGridCols = () => {
-    const count = charts.length;
-    if (count === 1) return 'grid-cols-1';
-    if (count === 2) return 'grid-cols-2';
-    if (count === 3) return 'grid-cols-3';
-    return 'grid-cols-4'; // 4+ charts
+    // Responsive grid: 1 col on mobile, 2 on tablet, 3 on desktop, 4 on large screens
+    return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   };
 
   const handleAddChart = (symbol: string, interval: string) => {
@@ -230,7 +227,7 @@ export default function MultiChartContainer({
         <button
           onClick={() => setShowAddModal(true)}
           className="
-            group relative flex min-h-[200px] flex-col items-center justify-center
+            group relative flex min-h-[300px] md:min-h-[400px] lg:min-h-[500px] flex-col items-center justify-center
             rounded-lg border-2 border-dashed border-gray-700/50
             bg-gray-800/30 transition-all
             hover:border-sky-500/50 hover:bg-gray-800/50

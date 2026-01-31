@@ -12,9 +12,15 @@ interface TimelineControlsProps {
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
   activeTraderCount?: number;
+  readonly?: boolean;
 }
 
-export function TimelineControls({ enabled, onToggle, activeTraderCount }: TimelineControlsProps) {
+export function TimelineControls({
+  enabled,
+  onToggle,
+  activeTraderCount,
+  readonly = false,
+}: TimelineControlsProps) {
   const [isToggling, setIsToggling] = useState(false);
 
   const handleToggle = async (newEnabled: boolean) => {
@@ -28,8 +34,12 @@ export function TimelineControls({ enabled, onToggle, activeTraderCount }: Timel
 
   return (
     <div
-      className="flex items-center justify-between rounded-2xl p-6 mb-6"
-      style={{ backgroundColor: '#2D2D2D' }}
+      className="flex items-center justify-between rounded-2xl p-5 mb-4"
+      style={{
+        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+        border: '1px solid rgba(99, 102, 241, 0.2)',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 40px rgba(99, 102, 241, 0.1)',
+      }}
     >
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
@@ -59,16 +69,18 @@ export function TimelineControls({ enabled, onToggle, activeTraderCount }: Timel
         <span className="text-sm text-gray-400">
           {enabled ? 'Auto-scheduling' : 'Manual scheduling'}
         </span>
-        <label className="relative inline-flex cursor-pointer items-center">
+        <label
+          className={`relative inline-flex items-center ${readonly ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+        >
           <input
             type="checkbox"
             checked={enabled}
-            onChange={(e) => !isToggling && handleToggle(e.target.checked)}
-            disabled={isToggling}
+            onChange={(e) => !isToggling && !readonly && handleToggle(e.target.checked)}
+            disabled={isToggling || readonly}
             className="peer sr-only"
           />
           <div
-            className={`peer h-6 w-11 rounded-full bg-gray-600 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-sky-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-800 ${isToggling ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`peer h-6 w-11 rounded-full bg-gray-600 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-sky-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-800 ${isToggling || readonly ? 'opacity-50 cursor-not-allowed' : ''}`}
           ></div>
         </label>
       </div>

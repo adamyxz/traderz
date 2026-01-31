@@ -15,11 +15,30 @@ export async function GET(request: NextRequest) {
     const url = `https://fapi.binance.com/fapi/v1/continuousKlines?pair=${symbol.toUpperCase()}&contractType=PERPETUAL&interval=${interval}&limit=${limit}`;
     const response = await fetch(url);
 
+    // Check HTTP response status
+    if (!response.ok) {
+      console.error('[Binance API] HTTP error:', response.status, response.statusText);
+      throw new Error(`Binance API HTTP error: ${response.status} ${response.statusText}`);
+    }
+
     const data = await response.json();
+
+    // Log the data type for debugging
+    console.log('[Binance API] Response data type:', Array.isArray(data) ? 'array' : typeof data);
+    if (!Array.isArray(data)) {
+      console.error('[Binance API] Non-array response:', data);
+    }
 
     // Check if Binance returned an error (e.g., region restriction)
     if (data.code && data.code !== 0) {
       throw new Error(`Binance API error: ${data.msg} (code: ${data.code})`);
+    }
+
+    // Validate that data is an array before mapping
+    if (!Array.isArray(data)) {
+      throw new Error(
+        `Binance API returned unexpected data format. Expected array, got ${typeof data}. Response: ${JSON.stringify(data).slice(0, 200)}`
+      );
     }
 
     // Transform Binance data to our format with all fields

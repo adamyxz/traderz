@@ -33,7 +33,13 @@ export function TimelineRuler({ currentTime }: TimelineRulerProps) {
   }, [currentTime]);
 
   return (
-    <div className="relative w-full h-12 mb-4 select-none">
+    <div
+      className="relative w-full h-14 mb-3 select-none rounded-xl"
+      style={{
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        border: '1px solid rgba(99, 102, 241, 0.15)',
+      }}
+    >
       {/* Hour marks */}
       <div className="absolute inset-0 flex items-center">
         {hourMarks.map((mark) => {
@@ -43,21 +49,37 @@ export function TimelineRuler({ currentTime }: TimelineRulerProps) {
             <div
               key={mark.hour}
               className="absolute flex flex-col items-center"
-              style={{ left: `${position}%` }}
+              style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
             >
               {/* Tick mark */}
               <div
                 className={`
-                  w-px transition-colors
-                  ${mark.isCenter ? 'h-6 bg-sky-500' : 'h-3 ' + (mark.isPast ? 'bg-gray-600' : 'bg-gray-400')}
+                  w-px transition-all
+                  ${mark.isCenter ? 'h-8' : 'h-4'}
                 `}
+                style={{
+                  background: mark.isCenter
+                    ? 'linear-gradient(180deg, transparent 0%, #38bdf8 50%, transparent 100%)'
+                    : mark.isPast
+                      ? 'rgba(75, 85, 99, 0.5)'
+                      : 'rgba(156, 163, 175, 0.5)',
+                  boxShadow: mark.isCenter ? '0 0 10px #38bdf880' : 'none',
+                }}
               />
               {/* Time label */}
               <span
                 className={`
-                  mt-1 text-xs font-mono transition-colors
-                  ${mark.isCenter ? 'text-sky-500 font-bold' : mark.isPast ? 'text-gray-600' : 'text-gray-400'}
+                  mt-1.5 text-xs font-mono transition-all
                 `}
+                style={{
+                  color: mark.isCenter
+                    ? '#38bdf8'
+                    : mark.isPast
+                      ? 'rgba(107, 114, 128, 0.8)'
+                      : 'rgba(156, 163, 175, 0.9)',
+                  fontWeight: mark.isCenter ? '600' : '400',
+                  textShadow: mark.isCenter ? '0 0 10px #38bdf880' : 'none',
+                }}
               >
                 {mark.label}
               </span>
@@ -68,10 +90,24 @@ export function TimelineRuler({ currentTime }: TimelineRulerProps) {
 
       {/* Center line (current time) */}
       <div
-        className="absolute top-0 bottom-0 left-1/2 w-px bg-sky-500"
-        style={{ transform: 'translateX(-50%)' }}
+        className="absolute top-0 bottom-0 left-1/2"
+        style={{
+          width: '2px',
+          background:
+            'linear-gradient(180deg, transparent 0%, #38bdf8 20%, #38bdf8 80%, transparent 100%)',
+          transform: 'translateX(-50%)',
+          boxShadow: '0 0 15px #38bdf860',
+        }}
       >
-        <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-sky-500" />
+        <div
+          className="absolute -top-1.5 left-1/2 -translate-x-1/2 rounded-full"
+          style={{
+            width: '10px',
+            height: '10px',
+            background: '#38bdf8',
+            boxShadow: '0 0 12px #38bdf8, 0 0 24px #38bdf880',
+          }}
+        />
       </div>
     </div>
   );

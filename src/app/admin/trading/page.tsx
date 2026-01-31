@@ -13,15 +13,35 @@ export default function TradingPage() {
   const [pairs, setPairs] = useState<TradingPair[]>([]);
   const [intervals, setIntervals] = useState<KlineInterval[]>([]);
   const [loading, setLoading] = useState(true);
-  const [timelineEnabled, setTimelineEnabled] = useState(false);
+  const [timelineEnabled, setTimelineEnabled] = useState(true);
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
+  const [_activeTraderCount, setActiveTraderCount] = useState(0);
 
   // Auto-update is always enabled when timeline is enabled
   useEffect(() => {
     setAutoUpdateEnabled(timelineEnabled);
   }, [timelineEnabled]);
 
-  // Fetch timeline config on mount
+  // Fetch system settings on mount (for timeline config)
+  useEffect(() => {
+    const fetchSystemSettings = async () => {
+      try {
+        const response = await fetch('/api/admin/system-settings');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setTimelineEnabled(data.data.system_enabled?.value === 'true');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching system settings:', error);
+      }
+    };
+
+    fetchSystemSettings();
+  }, []);
+
+  // Fetch timeline active trader count on mount
   useEffect(() => {
     const fetchTimelineConfig = async () => {
       try {
@@ -29,7 +49,7 @@ export default function TradingPage() {
         if (response.ok) {
           const data = await response.json();
           if (data.success) {
-            setTimelineEnabled(data.data.enabled);
+            setActiveTraderCount(data.data.activeTraderCount);
           }
         }
       } catch (error) {
@@ -103,7 +123,7 @@ export default function TradingPage() {
 
         <main className="p-8">
           {/* Timeline Visualization */}
-          <TimelineVisualization enabled={timelineEnabled} onToggle={setTimelineEnabled} />
+          <TimelineVisualization enabled={timelineEnabled} onToggle={() => {}} readonly />
 
           {/* Multi-Chart Container */}
           <MultiChartContainer
