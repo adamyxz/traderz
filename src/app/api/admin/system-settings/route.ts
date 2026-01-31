@@ -6,8 +6,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { systemConfigurations } from '@/db/schema';
+import { systemConfigurations, klineIntervals, tradingPairs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { getExchangeInfo, get24hTickers, type Binance24hTicker } from '@/lib/trading/binance-rest';
 
 // System setting keys configuration
 const SYSTEM_SETTING_KEYS = {
@@ -46,6 +47,108 @@ const DEFAULT_SETTINGS = {
       'Number of heartbeats between automatic trader optimizations. Default: 10. Set to 0 to disable.',
   },
 };
+
+/**
+ * Helper function to initialize kline intervals if table is empty
+ */
+async function initializeKlineIntervalsIfEmpty(): Promise<boolean> {
+  try {
+    const existing = await db.select().from(klineIntervals);
+
+    if (existing.length > 0) {
+      console.log('[SystemSettingsAPI] Kline intervals already exist, skipping initialization');
+      return false;
+    }
+
+    console.log('[SystemSettingsAPI] Kline intervals table is empty, initializing...');
+
+    await db.insert(klineIntervals).values([
+      { code: '1m', label: '1分钟', seconds: 60, displayOrder: 1, isActive: true },
+      { code: '3m', label: '3分钟', seconds: 180, displayOrder: 2, isActive: true },
+      { code: '5m', label: '5分钟', seconds: 300, displayOrder: 3, isActive: true },
+      { code: '15m', label: '15分钟', seconds: 900, displayOrder: 4, isActive: true },
+      { code: '30m', label: '30分钟', seconds: 1800, displayOrder: 5, isActive: true },
+      { code: '1h', label: '1小时', seconds: 3600, displayOrder: 6, isActive: true },
+      { code: '4h', label: '4小时', seconds: 14400, displayOrder: 7, isActive: true },
+      { code: '1d', label: '1天', seconds: 86400, displayOrder: 8, isActive: true },
+    ]);
+
+    console.log('[SystemSettingsAPI] Kline intervals initialized successfully');
+    return true;
+  } catch (error) {
+    console.error('[SystemSettingsAPI] Error initializing kline intervals:', error);
+    throw error;
+  }
+}
+
+/**
+ * Helper function to fetch and sync trading pairs from Binance if table is empty
+ */
+async function initializeTradingPairsIfEmpty(): Promise<boolean> {
+  try {
+    const existing = await db.select().from(tradingPairs);
+
+    if (existing.length > 0) {
+      console.log('[SystemSettingsAPI] Trading pairs already exist, skipping initialization');
+      return false;
+    }
+
+    console.log('[SystemSettingsAPI] Trading pairs table is empty, fetching from Binance...');
+
+    // Fetch trading pairs from Binance
+    const binancePairs = await getExchangeInfo();
+
+    // Fetch 24h ticker data
+    const tickers = await get24hTickers();
+
+    // Create a map of ticker data by symbol
+    const tickerMap = new Map<string, Binance24hTicker>();
+    tickers.forEach((ticker) => {
+      tickerMap.set(ticker.symbol, ticker);
+    });
+
+    // Merge ticker data into pairs
+    const pairsWithVolume = binancePairs.map((pair) => {
+      const ticker = tickerMap.get(pair.symbol);
+      return {
+        ...pair,
+        volume24h: ticker ? parseFloat(ticker.volume) : 0,
+        quoteVolume24h: ticker ? parseFloat(ticker.quoteVolume) : 0,
+      };
+    });
+
+    // Sort by quote volume (成交额) and take top 50
+    const topPairs = pairsWithVolume
+      .sort((a, b) => b.quoteVolume24h - a.quoteVolume24h)
+      .slice(0, 50)
+      .map((pair, index) => ({
+        ...pair,
+        volumeRank: index + 1,
+      }));
+
+    // Insert pairs
+    await db.insert(tradingPairs).values(
+      topPairs.map((pair) => ({
+        symbol: pair.symbol,
+        baseAsset: pair.baseAsset,
+        quoteAsset: pair.quoteAsset,
+        status: pair.status,
+        contractType: pair.contractType,
+        volume24h: pair.volume24h.toString(),
+        quoteVolume24h: pair.quoteVolume24h.toString(),
+        volumeRank: pair.volumeRank,
+      }))
+    );
+
+    console.log(
+      `[SystemSettingsAPI] Trading pairs initialized successfully (${topPairs.length} pairs)`
+    );
+    return true;
+  } catch (error) {
+    console.error('[SystemSettingsAPI] Error initializing trading pairs:', error);
+    throw error;
+  }
+}
 
 /**
  * GET /api/admin/system-settings
@@ -197,6 +300,19 @@ export async function POST(request: NextRequest) {
         systemEnabled
       );
       try {
+        // Auto-initialize data if enabling system and tables are empty
+        if (systemEnabled) {
+          console.log(
+            '[syncTimelineConfig] System is being enabled, checking if initialization is needed...'
+          );
+          const intervalsInitialized = await initializeKlineIntervalsIfEmpty();
+          const pairsInitialized = await initializeTradingPairsIfEmpty();
+
+          if (intervalsInitialized || pairsInitialized) {
+            console.log('[syncTimelineConfig] Data initialization completed');
+          }
+        }
+
         const TIMELINE_CONFIG_KEY = 'timeline_config';
 
         // Get current timeline config

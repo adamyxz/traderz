@@ -33,7 +33,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env
 .env*.local
-drizzle/
+
+# drizzle - keep migrations but ignore local development artifacts
+# drizzle/*.sql - don't ignore, migration files should be committed
+drizzle/*.ts
 
 # vercel
 .vercel
